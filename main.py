@@ -1,121 +1,114 @@
 # main.py
+# API REST para CronoAndes-Nata — modo offline-first
+# Compatible con PostgreSQL en Render
+
+from flask import Flask, request, jsonify
 import os
-import logging
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import List, Optional
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from datetime import datetime, timezone
 
-# --- Inicialización de FastAPI ---
-app = FastAPI(
-    title="CronoAndes API",
-    description="API pública para sincronización de tiempos en competencias deportivas (natación, ciclismo, etc.)",
-    version="1.0",
-    docs_url="/docs",  # Documentación interactiva en /docs
-    redoc_url=None
-)
+app = Flask(__name__)
 
-# --- Conexión a la base de datos ---
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise RuntimeError("❌ La variable DATABASE_URL no está definida. "
-                       "Asegúrate de vincular la base de datos en Render.")
+# === Base de datos ===
+def get_db_conn():
+    db_url = os.environ.get('DATABASE_URL', '').strip()
+    if not db_url:
+        raise Exception("DATABASE_URL no está definida")
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+    return psycopg2.connect(db_url, sslmode='require')
 
-# --- Modelo de datos (flexible para tiempos, mangas, resultados) ---
-class Registro(BaseModel):
-    Dorsal: Optional[str] = None
-    Nombre: Optional[str] = None
-    Apellido: Optional[str] = None
-    Club: Optional[str] = None
-    Categoria: Optional[str] = None
-    Evento: Optional[str] = None
-    Manga: Optional[str] = None
-    Tiempo: Optional[str] = None
-    Tiempo_Num: Optional[float] = None
-    Carril: Optional[int] = None
-    Posición: Optional[int] = None
-    Diferencia: Optional[str] = None
-    Final: Optional[bool] = None
-
-# --- Función para obtener conexión a la DB ---
-def get_db_connection():
-    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
-
-# --- Inicializar tablas al iniciar ---
 def init_db():
-    conn = get_db_connection()
+    conn = get_db_conn()
     cur = conn.cursor()
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS tiempos (
-        id SERIAL PRIMARY KEY,
-        event_code TEXT NOT NULL,
-        Dorsal TEXT,
-        Nombre TEXT,
-        Apellido TEXT,
-        Club TEXT,
-        Categoria TEXT,
-        Evento TEXT,
-        Manga TEXT,
-        Tiempo TEXT,
-        Tiempo_Num REAL,
-        Carril INTEGER
-    );
-    """)
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS tiempos (
+            id SERIAL PRIMARY KEY,
+            evento TEXT NOT NULL,
+            dorsal TEXT NOT NULL,
+            action TEXT NOT NULL,
+            timestamp_iso TEXT NOT NULL,
+            creado_en TIMESTAMP DEFAULT NOW()
+        )
+    ''')
+    cur.execute('CREATE INDEX IF NOT EXISTS idx_tiempos_evento ON tiempos (evento)')
     conn.commit()
     cur.close()
     conn.close()
 
-# Ejecutar al arrancar
-init_db()
+# === Ruta raíz ===
+@app.route('/')
+def home():
+    return jsonify({
+        "app": "CronoAndes-Nata",
+        "version": "1.0",
+        "endpoints": {
+            "POST /api/tiempos/<event_code>": "Recibir tiempos",
+            "GET /api/tiempos/<event_code>": "Obtener tiempos"
+        }
+    })
 
-# --- Endpoints ---
-@app.post("/api/tiempos/{event_code}")
-async def recibir_tiempos(event_code: str, datos: List[Registro]):
-    """Recibe una lista de tiempos y los almacena en la DB bajo un event_code."""
+# === Recibir tiempos ===
+@app.route('/api/tiempos/<event_code>', methods=['POST'])
+def recibir_tiempos(event_code):
     try:
-        conn = get_db_connection()
+        init_db()
+        data = request.get_json()
+        if not isinstance(data, list):
+            return jsonify({"error": "Se espera una lista de registros"}), 400
+
+        conn = get_db_conn()
         cur = conn.cursor()
         # Eliminar datos anteriores del mismo evento (para evitar duplicados)
-        cur.execute("DELETE FROM tiempos WHERE event_code = %s", (event_code,))
-        # Insertar nuevos registros
-        for reg in datos:
-            d = reg.dict(exclude_none=True)
-            if not d:
-                continue
-            cols = ["event_code"] + list(d.keys())
-            vals = [event_code] + list(d.values())
-            placeholders = ", ".join(["%s"] * len(cols))
-            cols_str = ", ".join(f'"{c}"' for c in cols)
-            cur.execute(f'INSERT INTO tiempos ({cols_str}) VALUES ({placeholders})', vals)
+        cur.execute("DELETE FROM tiempos WHERE evento = %s", (event_code,))
+        
+        for item in 
+            dorsal = str(item.get('Dorsal', '')).strip()
+            action = str(item.get('action', 'llegada')).strip().lower()
+            timestamp_iso = str(item.get('timestamp_iso', datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'))).strip()
+            if dorsal and event_code:
+                cur.execute(
+                    "INSERT INTO tiempos (evento, dorsal, action, timestamp_iso) VALUES (%s, %s, %s, %s)",
+                    (event_code, dorsal, action, timestamp_iso)
+                )
         conn.commit()
         cur.close()
         conn.close()
-        return {"status": "ok", "guardados": len(datos)}
-    except Exception as e:
-        logging.error(f"Error al guardar tiempos para {event_code}: {e}")
-        raise HTTPException(status_code=500, detail="Error interno al guardar")
+        return jsonify({"status": "ok", "guardados": len(data)}), 200
 
-@app.get("/api/tiempos/{event_code}")
-async def obtener_tiempos(event_code: str):
-    """Devuelve todos los tiempos asociados a un event_code."""
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# === Obtener tiempos ===
+@app.route('/api/tiempos/<event_code>', methods=['GET'])
+def obtener_tiempos(event_code):
     try:
-        conn = get_db_connection()
+        init_db()
+        conn = get_db_conn()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM tiempos WHERE event_code = %s", (event_code,))
+        cur.execute(
+            "SELECT dorsal, action, timestamp_iso FROM tiempos WHERE evento = %s ORDER BY id",
+            (event_code,)
+        )
         rows = cur.fetchall()
         cur.close()
         conn.close()
-        return [dict(row) for row in rows]
+        return jsonify([
+            {"dorsal": r[0], "action": r[1], "timestamp_iso": r[2]} for r in rows
+        ]), 200
     except Exception as e:
-        logging.error(f"Error al leer tiempos para {event_code}: {e}")
-        return []
+        return jsonify({"error": str(e)}), 500
 
-# --- Ruta raíz (opcional, para verificación) ---
-@app.get("/")
-async def home():
-    return {
-        "mensaje": "CronoAndes API activa",
-        "documentación": "/docs",
-        "ejemplo": "/api/tiempos/DHVALLE-1"
-    }
+# === Health check ===
+@app.route('/health')
+def health():
+    try:
+        init_db()
+        return jsonify({"status": "ok", "database": "connected"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "msg": str(e)}), 500
+
+# === Iniciar ===
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
