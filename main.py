@@ -1,6 +1,6 @@
 # main.py
 # Backend para CronoAndes-Nata — MODO MANUAL (tiempos netos)
-# Compatible con Streamlit (ingreso manual de tiempos como "28.45" o "NT")
+# Compatible con Streamlit y con estándares HY-TEK (tiempo_neto + estado)
 
 from flask import Flask, request, jsonify
 import os
@@ -24,6 +24,7 @@ def init_db():
     conn = get_db_conn()
     cur = conn.cursor()
     
+    # Tabla de eventos
     cur.execute('''
         CREATE TABLE IF NOT EXISTS eventos (
             event_code TEXT PRIMARY KEY,
@@ -32,6 +33,7 @@ def init_db():
         )
     ''')
     
+    # Tabla de nadadores (metadata de series)
     cur.execute('''
         CREATE TABLE IF NOT EXISTS nadadores (
             id SERIAL PRIMARY KEY,
@@ -42,28 +44,34 @@ def init_db():
             apellido TEXT,
             club TEXT,
             categoria TEXT,
+            prueba TEXT,
+            ronda TEXT,
             UNIQUE(event_code, serie_numero, carril)
         )
     ''')
     
+    # Tabla de tiempos (con tiempo_neto y estado)
     cur.execute('''
         CREATE TABLE IF NOT EXISTS tiempos (
             id SERIAL PRIMARY KEY,
             event_code TEXT NOT NULL,
             serie_numero INTEGER NOT NULL,
             carril INTEGER NOT NULL CHECK (carril BETWEEN 1 AND 10),
-            tiempo TEXT,  -- "28.45", "NT", etc.
-            registrado_en TIMESTAMP DEFAULT NOW()
+            tiempo_neto REAL,          -- NULL si no válido
+            estado TEXT NOT NULL DEFAULT 'válido',  -- 'válido', 'NT', 'DNS', 'DSQ'
+            registrado_en TIMESTAMP DEFAULT NOW(),
+            UNIQUE(event_code, serie_numero, carril)
         )
     ''')
     
+    # Índices para rendimiento
     cur.execute('CREATE INDEX IF NOT EXISTS idx_tiempos_event_serie ON tiempos (event_code, serie_numero);')
     cur.execute('CREATE INDEX IF NOT EXISTS idx_nadadores_event ON nadadores (event_code);')
     
     conn.commit()
     cur.close()
     conn.close()
-    logging.info("✅ DB inicializada (modo manual).")
+    logging.info("✅ DB inicializada (modo manual, compatible con HY-TEK).")
 
 def validar_event_code(code):
     if not isinstance(code, str) or not code.strip() or len(code) > 50:
@@ -84,7 +92,7 @@ def validar_carril(lane):
 
 @app.route('/')
 def home():
-    return jsonify({"app": "CronoAndes-Nata", "modo": "manual", "version": "2.1"})
+    return jsonify({"app": "CronoAndes-Nata", "modo": "manual", "version": "2.2-hytek"})
 
 @app.route('/health')
 def health():
@@ -131,7 +139,6 @@ def subir_nadadores(event_code):
             return jsonify({"error": "esperaba lista"}), 400
         conn = get_db_conn()
         cur = conn.cursor()
-        cur.execute("DELETE FROM nadadores WHERE event_code = %s", (event_code,))
         for item in data:
             serie = validar_serie_numero(item['serie_numero'])
             carril = validar_carril(item['carril'])
@@ -139,8 +146,17 @@ def subir_nadadores(event_code):
             if not nombre:
                 return jsonify({"error": "nombre requerido"}), 400
             cur.execute('''
-                INSERT INTO nadadores (event_code, serie_numero, carril, nombre, apellido, club, categoria)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO nadadores (
+                    event_code, serie_numero, carril, nombre, apellido, club, categoria, prueba, ronda
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (event_code, serie_numero, carril)
+                DO UPDATE SET
+                    nombre = EXCLUDED.nombre,
+                    apellido = EXCLUDED.apellido,
+                    club = EXCLUDED.club,
+                    categoria = EXCLUDED.categoria,
+                    prueba = EXCLUDED.prueba,
+                    ronda = EXCLUDED.ronda
             ''', (
                 event_code,
                 serie,
@@ -148,7 +164,9 @@ def subir_nadadores(event_code):
                 nombre,
                 str(item.get('apellido', '')) or None,
                 str(item.get('club', '')) or None,
-                str(item.get('categoria', '')) or None
+                str(item.get('categoria', '')) or None,
+                str(item.get('prueba', '')) or None,
+                str(item.get('ronda', '')) or None
             ))
         conn.commit()
         cur.close()
@@ -169,18 +187,25 @@ def registrar_tiempos(event_code):
             return jsonify({"error": "esperaba lista"}), 400
         conn = get_db_conn()
         cur = conn.cursor()
-        cur.execute("DELETE FROM tiempos WHERE event_code = %s", (event_code,))
         for item in data:
             serie = validar_serie_numero(item['serie_numero'])
             carril = validar_carril(item['carril'])
-            tiempo = item.get('Tiempo')  # ¡Ojo! Streamlit usa "Tiempo" con mayúscula
-            # Permitir: número, string "28.45", "NT", o None
-            if tiempo == "":
-                tiempo = None
+            tiempo_neto = item.get('tiempo_neto')  # float o None
+            estado = item.get('estado', 'válido')  # 'válido', 'NT', 'DNS', 'DSQ'
+
+            # Validar estado
+            if estado not in {'válido', 'NT', 'DNS', 'DSQ'}:
+                estado = 'NT'
+
             cur.execute('''
-                INSERT INTO tiempos (event_code, serie_numero, carril, tiempo)
-                VALUES (%s, %s, %s, %s)
-            ''', (event_code, serie, carril, str(tiempo) if tiempo is not None else None))
+                INSERT INTO tiempos (event_code, serie_numero, carril, tiempo_neto, estado)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (event_code, serie_numero, carril)
+                DO UPDATE SET
+                    tiempo_neto = EXCLUDED.tiempo_neto,
+                    estado = EXCLUDED.estado,
+                    registrado_en = NOW()
+            ''', (event_code, serie, carril, tiempo_neto, estado))
         conn.commit()
         cur.close()
         conn.close()
@@ -198,7 +223,7 @@ def obtener_nadadores(event_code):
         conn = get_db_conn()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute('''
-            SELECT serie_numero, carril, nombre, apellido, club, categoria
+            SELECT serie_numero, carril, nombre, apellido, club, categoria, prueba, ronda
             FROM nadadores WHERE event_code = %s
             ORDER BY serie_numero, carril
         ''', (event_code,))
@@ -219,15 +244,34 @@ def obtener_tiempos(event_code):
         conn = get_db_conn()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute('''
-            SELECT serie_numero, carril, tiempo AS Tiempo
+            SELECT serie_numero, carril, tiempo_neto, estado
             FROM tiempos WHERE event_code = %s
             ORDER BY serie_numero, carril
         ''', (event_code,))
         rows = cur.fetchall()
         cur.close()
         conn.close()
-        # Devolver con clave "Tiempo" (mayúscula) para compatibilidad con Streamlit
-        return jsonify([{"serie_numero": r["serie_numero"], "carril": r["carril"], "Tiempo": r["tiempo"]} for r in rows]), 200
+        result = []
+        for r in rows:
+            val = r["tiempo_neto"]
+            estado = r["estado"]
+            if estado != "válido" or val is None:
+                tiempo_str = "NT"
+            else:
+                if val >= 60:
+                    mins = int(val // 60)
+                    secs = val % 60
+                    tiempo_str = f"{mins}:{secs:05.2f}"  # Ej: 1:02.34
+                else:
+                    tiempo_str = f"{val:.2f}"            # Ej: 28.45
+            result.append({
+                "serie_numero": r["serie_numero"],
+                "carril": r["carril"],
+                "Tiempo": tiempo_str,       # Mayúscula, como espera Streamlit
+                "tiempo_neto": val,
+                "estado": estado
+            })
+        return jsonify(result), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
