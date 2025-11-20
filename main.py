@@ -48,7 +48,7 @@ def get_db_conn():
 def init_db():
     conn = get_db_conn()
     cur = conn.cursor()
-    # Tabla de nadadores (solo metadatos para app móvil)
+    # Tabla de nadadores — expandida con todos los campos necesarios
     cur.execute('''
         CREATE TABLE IF NOT EXISTS nadadores (
             id SERIAL PRIMARY KEY,
@@ -58,10 +58,17 @@ def init_db():
             nombre TEXT NOT NULL,
             apellido TEXT,
             club TEXT,
+            evento TEXT,
+            ronda TEXT,
+            total_series INTEGER,
+            categoria TEXT,
+            genero TEXT,
+            prueba TEXT,
+            tiempo_previo TEXT,
             UNIQUE(event_code, serie_numero, carril)
         )
     ''')
-    # Tabla de eventos de tiempo (salida/llegada)
+    # Tabla de eventos de tiempo (sin cambios)
     cur.execute('''
         CREATE TABLE IF NOT EXISTS eventos_tiempo (
             id SERIAL PRIMARY KEY,
@@ -79,7 +86,7 @@ def init_db():
     conn.commit()
     cur.close()
     conn.close()
-    logging.info("✅ Base de datos inicializada para natación (carriles + timestamps).")
+    logging.info("✅ Base de datos inicializada para natación (carriles + timestamps + metadata completa).")
 
 # === Endpoints ===
 
@@ -88,8 +95,8 @@ def home():
     return jsonify({
         "app": "CronoAndes-Natación",
         "modo": "timestamp",
-        "version": "1.0",
-        "compatible_con": "Streamlit (fallback) + App Móvil (partida/llegada)"
+        "version": "1.1",
+        "compatible_con": "Streamlit (fallback) + App Móvil Flutter (partida/llegada)"
     })
 
 @app.route('/health')
@@ -115,15 +122,24 @@ def manejar_nadadores(event_code):
             cur.execute("DELETE FROM nadadores WHERE event_code = %s", (event_code,))
             for item in data:
                 cur.execute('''
-                    INSERT INTO nadadores (event_code, serie_numero, carril, nombre, apellido, club)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO nadadores (
+                        event_code, serie_numero, carril, nombre, apellido, club,
+                        evento, ronda, total_series, categoria, genero, prueba, tiempo_previo
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ''', (
                     event_code,
-                    item['serie_numero'],
-                    item['carril'],
-                    item['nombre'],
-                    item.get('apellido') or '',
-                    item.get('club') or ''
+                    item.get('serie_numero'),
+                    item.get('carril'),
+                    item.get('nombre', ''),
+                    item.get('apellido', ''),
+                    item.get('club', ''),
+                    item.get('evento', ''),
+                    item.get('ronda', 'Preliminar'),
+                    item.get('total_series', 1),
+                    item.get('categoria', 'Mayores'),
+                    item.get('genero', 'Masculino'),
+                    item.get('prueba', ''),
+                    item.get('tiempo_previo', None)
                 ))
             conn.commit()
             cur.close()
@@ -133,7 +149,8 @@ def manejar_nadadores(event_code):
             conn = get_db_conn()
             cur = conn.cursor()
             cur.execute('''
-                SELECT serie_numero, carril, nombre, apellido, club
+                SELECT serie_numero, carril, nombre, apellido, club,
+                       evento, ronda, total_series, categoria, genero, prueba, tiempo_previo
                 FROM nadadores
                 WHERE event_code = %s
                 ORDER BY serie_numero, carril
@@ -146,7 +163,14 @@ def manejar_nadadores(event_code):
                 "carril": r[1],
                 "nombre": r[2],
                 "apellido": r[3],
-                "club": r[4]
+                "club": r[4],
+                "evento": r[5],
+                "ronda": r[6],
+                "total_series": r[7],
+                "categoria": r[8],
+                "genero": r[9],
+                "prueba": r[10],
+                "tiempo_previo": r[11]
             } for r in rows]), 200
     except Exception as e:
         logging.exception("Error en /nadadores")
@@ -211,7 +235,7 @@ def registrar_tiempo(event_code):
         logging.exception("Error al registrar tiempo")
         return jsonify({"error": str(e)}), 500
 
-# --- Obtener tiempos por evento y serie ---
+# --- Obtener tiempos por evento y serie (sin cambios) ---
 @app.route('/api/eventos/<event_code>/tiempos/<int:serie_numero>')
 def obtener_tiempos_serie(event_code, serie_numero):
     try:
@@ -242,20 +266,19 @@ def obtener_tiempos_serie(event_code, serie_numero):
         return jsonify({
             "serie_numero": serie_numero,
             "salida": salida_ts,
-            "llegadas": llegadas_dict  # {4: "2025-...Z", 5: "..."}
+            "llegadas": llegadas_dict
         }), 200
     except Exception as e:
         logging.exception("Error al obtener tiempos")
         return jsonify({"error": str(e)}), 500
 
-# --- Calcular tiempos netos (para Streamlit o exportación) ---
+# --- Calcular tiempos netos (sin cambios) ---
 @app.route('/api/eventos/<event_code>/resultados')
 def obtener_resultados_netos(event_code):
     try:
         init_db()
         conn = get_db_conn()
         cur = conn.cursor()
-        # Obtener todas las salidas y llegadas activas
         cur.execute('''
             SELECT serie_numero, action, carril, timestamp_iso
             FROM eventos_tiempo
@@ -266,7 +289,6 @@ def obtener_resultados_netos(event_code):
         cur.close()
         conn.close()
 
-        # Agrupar por serie
         series = {}
         for serie_num, action, carril, ts in eventos:
             if serie_num not in series:
@@ -276,7 +298,6 @@ def obtener_resultados_netos(event_code):
             elif action == "llegada" and carril is not None:
                 series[serie_num]["llegadas"][carril] = ts
 
-        # Calcular tiempos netos
         resultados = []
         for serie_num, data in series.items():
             if not data["salida"]:
@@ -285,12 +306,12 @@ def obtener_resultados_netos(event_code):
             for carril, llegada_ts in data["llegadas"].items():
                 try:
                     llegada_dt = parse_iso_ts(llegada_ts)
-                    neto_ms = (llegada_dt - salida_dt).total_seconds() * 1000
-                    if neto_ms >= 0:
+                    neto = (llegada_dt - salida_dt).total_seconds()
+                    if neto >= 0:
                         resultados.append({
                             "serie_numero": serie_num,
                             "carril": carril,
-                            "tiempo_neto": round(neto_ms / 1000, 2),  # en segundos
+                            "tiempo_neto": round(neto, 2),
                             "estado": "válido"
                         })
                 except:
