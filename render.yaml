@@ -1,7 +1,3 @@
-# render.yaml
-# Configuración para despliegue automático en Render.com
-# Compatible con tu main.py (Flask + PostgreSQL)
-
 services:
   - type: web
     name: CronoAndes-Nata
