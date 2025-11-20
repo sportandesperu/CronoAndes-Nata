@@ -1,19 +1,22 @@
 # render.yaml
 # Configuración para despliegue automático en Render.com
+# Compatible con tu main.py (Flask + PostgreSQL)
 
 services:
   - type: web
     name: CronoAndes-Nata
     runtime: python
-    region: oregon # o frankfurt, según tu ubicación preferida
-    plan: free # o cambiar a 'starter' si necesitas más recursos
+    region: oregon
+    plan: free
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "python main.py"
+    startCommand: "gunicorn --bind 0.0.0.0:$PORT main:app"
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.9
+        value: "3.11.9"
       - key: DATABASE_URL
-        sync: false # Render lo inyectará desde el servicio de base de datos
+        fromDatabase:
+          name: cronoandes-nata-db
+          property: connectionString
     healthCheckPath: /health
 
 databases:
@@ -21,4 +24,4 @@ databases:
     databaseName: cronoandes_nata_db
     user: cronoandes_user
     region: oregon
-    plan: free # Cambia a 'starter' en producción si esperas mucho tráfico
+    plan: free
