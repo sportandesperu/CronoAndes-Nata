@@ -1,6 +1,7 @@
 # main.py
 # Backend para CronoAndes-Natación — MODO TIMESTAMP (partida + llegada)
 # Compatible con app móvil (partidor/llegada) y con Streamlit (fallback manual)
+# Actualizado para funcionar con Supabase
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -38,9 +39,19 @@ def truncate_to_ms(ts_str):
     return clean + "Z"
 
 def get_db_conn():
+    # Usa la URL de Supabase directamente desde la variable de entorno
     db_url = os.environ.get('DATABASE_URL', '').strip()
     if not db_url:
-        raise RuntimeError("❌ DATABASE_URL no definida")
+        # Fallback a credenciales explícitas de tu proyecto Supabase
+        host = "db.tvbmajrcylbzgalxivoy.supabase.co"
+        port = "5432"
+        dbname = "postgres"
+        user = "postgres"
+        password = os.environ.get('SUPABASE_DB_PASSWORD', '')
+        if not password:
+            raise RuntimeError("❌ SUPABASE_DB_PASSWORD no definida")
+        db_url = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+    
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
     return psycopg2.connect(db_url, sslmode='require')
@@ -48,7 +59,7 @@ def get_db_conn():
 def init_db():
     conn = get_db_conn()
     cur = conn.cursor()
-    # Tabla de nadadores — expandida con todos los campos necesarios
+    # Tabla de nadadores
     cur.execute('''
         CREATE TABLE IF NOT EXISTS nadadores (
             id SERIAL PRIMARY KEY,
@@ -64,11 +75,10 @@ def init_db():
             categoria TEXT,
             genero TEXT,
             prueba TEXT,
-            tiempo_previo TEXT,
-            UNIQUE(event_code, serie_numero, carril)
+            tiempo_previo TEXT
         )
     ''')
-    # Tabla de eventos de tiempo (sin cambios)
+    # Tabla de eventos de tiempo
     cur.execute('''
         CREATE TABLE IF NOT EXISTS eventos_tiempo (
             id SERIAL PRIMARY KEY,
@@ -81,12 +91,13 @@ def init_db():
             reemplazado_por INTEGER REFERENCES eventos_tiempo(id)
         )
     ''')
+    # Índices para rendimiento
     cur.execute('CREATE INDEX IF NOT EXISTS idx_nadadores_event ON nadadores (event_code, serie_numero);')
     cur.execute('CREATE INDEX IF NOT EXISTS idx_eventos_activos ON eventos_tiempo (event_code, serie_numero) WHERE reemplazado_por IS NULL;')
     conn.commit()
     cur.close()
     conn.close()
-    logging.info("✅ Base de datos inicializada para natación (carriles + timestamps + metadata completa).")
+    logging.info("✅ Base de datos Supabase inicializada correctamente.")
 
 # === Endpoints ===
 
@@ -96,7 +107,8 @@ def home():
         "app": "CronoAndes-Natación",
         "modo": "timestamp",
         "version": "1.1",
-        "compatible_con": "Streamlit (fallback) + App Móvil Flutter (partida/llegada)"
+        "compatible_con": "Streamlit + App Móvil Flutter",
+        "base_de_datos": "Supabase"
     })
 
 @app.route('/health')
@@ -107,7 +119,7 @@ def health():
     except Exception as e:
         return jsonify({"status": "error", "msg": str(e)}), 500
 
-# --- Inscripciones (metadatos de series) ---
+# --- Inscripciones ---
 @app.route('/api/eventos/<event_code>/nadadores', methods=['POST', 'GET'])
 def manejar_nadadores(event_code):
     try:
@@ -176,7 +188,7 @@ def manejar_nadadores(event_code):
         logging.exception("Error en /nadadores")
         return jsonify({"error": str(e)}), 500
 
-# --- Registro de tiempos (partida o llegada) ---
+# --- Registro de tiempos ---
 @app.route('/api/eventos/<event_code>/tiempos', methods=['POST'])
 def registrar_tiempo(event_code):
     try:
@@ -185,7 +197,7 @@ def registrar_tiempo(event_code):
         data = request.get_json()
         action = data.get('action', '').lower()
         serie_numero = data.get('serie_numero')
-        carril = data.get('carril')  # opcional si es "salida"
+        carril = data.get('carril')
         timestamp = data.get('timestamp')
         if not timestamp:
             timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
@@ -201,7 +213,7 @@ def registrar_tiempo(event_code):
         conn = get_db_conn()
         cur = conn.cursor()
 
-        # Reemplazar entradas anteriores
+        # Reemplazar acciones anteriores
         if action == 'salida':
             cur.execute("""
                 UPDATE eventos_tiempo
@@ -215,7 +227,7 @@ def registrar_tiempo(event_code):
                 WHERE event_code = %s AND serie_numero = %s AND carril = %s AND action = 'llegada' AND reemplazado_por IS NULL
             """, (event_code, serie_numero, carril))
 
-        # Insertar nuevo
+        # Insertar nuevo registro
         if action == 'salida':
             cur.execute('''
                 INSERT INTO eventos_tiempo (event_code, serie_numero, action, timestamp_iso)
@@ -235,14 +247,13 @@ def registrar_tiempo(event_code):
         logging.exception("Error al registrar tiempo")
         return jsonify({"error": str(e)}), 500
 
-# --- Obtener tiempos por evento y serie (sin cambios) ---
+# --- Obtener tiempos por serie ---
 @app.route('/api/eventos/<event_code>/tiempos/<int:serie_numero>')
 def obtener_tiempos_serie(event_code, serie_numero):
     try:
         init_db()
         conn = get_db_conn()
         cur = conn.cursor()
-        # Salidas
         cur.execute('''
             SELECT action, timestamp_iso FROM eventos_tiempo
             WHERE event_code = %s AND serie_numero = %s AND action = 'salida' AND reemplazado_por IS NULL
@@ -250,7 +261,6 @@ def obtener_tiempos_serie(event_code, serie_numero):
         ''', (event_code, serie_numero))
         salida = cur.fetchone()
 
-        # Llegadas
         cur.execute('''
             SELECT carril, timestamp_iso FROM eventos_tiempo
             WHERE event_code = %s AND serie_numero = %s AND action = 'llegada' AND reemplazado_por IS NULL
@@ -260,19 +270,16 @@ def obtener_tiempos_serie(event_code, serie_numero):
         cur.close()
         conn.close()
 
-        salida_ts = salida[1] if salida else None
-        llegadas_dict = {r[0]: r[1] for r in llegadas}
-
         return jsonify({
             "serie_numero": serie_numero,
-            "salida": salida_ts,
-            "llegadas": llegadas_dict
+            "salida": salida[1] if salida else None,
+            "llegadas": {r[0]: r[1] for r in llegadas}
         }), 200
     except Exception as e:
         logging.exception("Error al obtener tiempos")
         return jsonify({"error": str(e)}), 500
 
-# --- Calcular tiempos netos (sin cambios) ---
+# --- Calcular resultados netos ---
 @app.route('/api/eventos/<event_code>/resultados')
 def obtener_resultados_netos(event_code):
     try:
