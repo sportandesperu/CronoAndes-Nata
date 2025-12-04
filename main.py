@@ -1,332 +1,141 @@
-# main.py
-# Backend para CronoAndes-Natación — MODO TIMESTAMP (partida + llegada)
-# Compatible con app móvil (partidor/llegada) y con Streamlit (fallback manual)
-# Actualizado para funcionar con Supabase
+# app.py
+# Backend para resultados en vivo — Compatible con tu esquema de Supabase (multthuaptff)
+# Lee directamente de las tablas: nadadores, eventos_tiempo, resultados
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
 import psycopg2
-from datetime import datetime, timezone
+from psycopg2.extras import RealDictCursor
 import logging
-import re
 
 # === Configuración ===
 logging.basicConfig(level=logging.INFO)
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'cronoandes-natacion-2025')
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'natacion-backend-2025')
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-# === Funciones auxiliares ===
-def parse_iso_ts(ts_str):
-    """Convierte ISO 8601 a datetime UTC."""
-    if ts_str.endswith('Z'):
-        ts_str = ts_str[:-1]
-    dt = datetime.fromisoformat(ts_str)
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
-
-def truncate_to_ms(ts_str):
-    """Trunca microsegundos a milisegundos y termina en 'Z'."""
-    if not ts_str:
-        return ts_str
-    clean = ts_str.rstrip('Z').rstrip('+00:00')
-    if '.' in clean:
-        base, frac = clean.split('.', 1)
-        frac = re.sub(r'[^0-9]', '', frac)[:6].ljust(6, '0')
-        return f"{base}.{frac[:3]}Z"
-    return clean + "Z"
-
+# === Conexión a Supabase ===
 def get_db_conn():
-    # Usa la URL de Supabase directamente desde la variable de entorno
-    db_url = os.environ.get('DATABASE_URL', '').strip()
+    """Conecta a tu proyecto Supabase: multuhaptff"""
+    # URL de conexión de Supabase
+    db_url = os.environ.get('SUPABASE_DB_URL')
     if not db_url:
-        # Fallback a credenciales explícitas de tu proyecto Supabase
-        host = "db.tvbmajrcylbzgalxivoy.supabase.co"
-        port = "5432"
-        dbname = "postgres"
-        user = "postgres"
-        password = os.environ.get('SUPABASE_DB_PASSWORD', '')
-        if not password:
-            raise RuntimeError("❌ SUPABASE_DB_PASSWORD no definida")
-        db_url = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
-    
-    if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
+        raise RuntimeError("❌ SUPABASE_DB_URL no definida. Configúrala en GitHub Secrets.")
     return psycopg2.connect(db_url, sslmode='require')
-
-def init_db():
-    conn = get_db_conn()
-    cur = conn.cursor()
-    # Tabla de nadadores
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS nadadores (
-            id SERIAL PRIMARY KEY,
-            event_code TEXT NOT NULL,
-            serie_numero INTEGER NOT NULL,
-            carril INTEGER NOT NULL CHECK (carril BETWEEN 1 AND 10),
-            nombre TEXT NOT NULL,
-            apellido TEXT,
-            club TEXT,
-            evento TEXT,
-            ronda TEXT,
-            total_series INTEGER,
-            categoria TEXT,
-            genero TEXT,
-            prueba TEXT,
-            tiempo_previo TEXT
-        )
-    ''')
-    # Tabla de eventos de tiempo
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS eventos_tiempo (
-            id SERIAL PRIMARY KEY,
-            event_code TEXT NOT NULL,
-            serie_numero INTEGER NOT NULL,
-            carril INTEGER CHECK (carril BETWEEN 1 AND 10),
-            action TEXT NOT NULL CHECK (action IN ('salida', 'llegada')),
-            timestamp_iso TEXT NOT NULL,
-            creado_en TIMESTAMP DEFAULT NOW(),
-            reemplazado_por INTEGER REFERENCES eventos_tiempo(id)
-        )
-    ''')
-    # Índices para rendimiento
-    cur.execute('CREATE INDEX IF NOT EXISTS idx_nadadores_event ON nadadores (event_code, serie_numero);')
-    cur.execute('CREATE INDEX IF NOT EXISTS idx_eventos_activos ON eventos_tiempo (event_code, serie_numero) WHERE reemplazado_por IS NULL;')
-    conn.commit()
-    cur.close()
-    conn.close()
-    logging.info("✅ Base de datos Supabase inicializada correctamente.")
 
 # === Endpoints ===
 
 @app.route('/')
 def home():
     return jsonify({
-        "app": "CronoAndes-Natación",
-        "modo": "timestamp",
-        "version": "1.1",
-        "compatible_con": "Streamlit + App Móvil Flutter",
-        "base_de_datos": "Supabase"
+        "app": "Natación Resultados en Vivo",
+        "version": "1.0",
+        "db": "Supabase (multhuaptff)",
+        "endpoints": [
+            "/api/eventos/<event_code>/resultados",
+            "/api/eventos/<event_code>/tiempos",
+            "/api/eventos/<event_code>/inscritos"
+        ]
     })
 
 @app.route('/health')
 def health():
     try:
-        init_db()
-        return jsonify({"status": "ok"}), 200
+        conn = get_db_conn()
+        conn.close()
+        return jsonify({"status": "ok", "db": "connected"}), 200
     except Exception as e:
         return jsonify({"status": "error", "msg": str(e)}), 500
 
-# --- Inscripciones ---
-@app.route('/api/eventos/<event_code>/nadadores', methods=['POST', 'GET'])
-def manejar_nadadores(event_code):
+# --- 1. Obtener inscritos de un evento ---
+@app.route('/api/eventos/<event_code>/inscritos')
+def get_inscritos(event_code):
     try:
-        init_db()
-        event_code = event_code.strip()
-        if request.method == 'POST':
-            data = request.get_json()
-            if not isinstance(data, list):
-                return jsonify({"error": "esperaba lista"}), 400
-            conn = get_db_conn()
-            cur = conn.cursor()
-            cur.execute("DELETE FROM nadadores WHERE event_code = %s", (event_code,))
-            for item in data:
-                cur.execute('''
-                    INSERT INTO nadadores (
-                        event_code, serie_numero, carril, nombre, apellido, club,
-                        evento, ronda, total_series, categoria, genero, prueba, tiempo_previo
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ''', (
-                    event_code,
-                    item.get('serie_numero'),
-                    item.get('carril'),
-                    item.get('nombre', ''),
-                    item.get('apellido', ''),
-                    item.get('club', ''),
-                    item.get('evento', ''),
-                    item.get('ronda', 'Preliminar'),
-                    item.get('total_series', 1),
-                    item.get('categoria', 'Mayores'),
-                    item.get('genero', 'Masculino'),
-                    item.get('prueba', ''),
-                    item.get('tiempo_previo', None)
-                ))
-            conn.commit()
-            cur.close()
-            conn.close()
-            return jsonify({"status": "ok", "nadadores": len(data)}), 200
-        else:
-            conn = get_db_conn()
-            cur = conn.cursor()
-            cur.execute('''
-                SELECT serie_numero, carril, nombre, apellido, club,
-                       evento, ronda, total_series, categoria, genero, prueba, tiempo_previo
-                FROM nadadores
-                WHERE event_code = %s
-                ORDER BY serie_numero, carril
-            ''', (event_code,))
-            rows = cur.fetchall()
-            cur.close()
-            conn.close()
-            return jsonify([{
-                "serie_numero": r[0],
-                "carril": r[1],
-                "nombre": r[2],
-                "apellido": r[3],
-                "club": r[4],
-                "evento": r[5],
-                "ronda": r[6],
-                "total_series": r[7],
-                "categoria": r[8],
-                "genero": r[9],
-                "prueba": r[10],
-                "tiempo_previo": r[11]
-            } for r in rows]), 200
-    except Exception as e:
-        logging.exception("Error en /nadadores")
-        return jsonify({"error": str(e)}), 500
-
-# --- Registro de tiempos ---
-@app.route('/api/eventos/<event_code>/tiempos', methods=['POST'])
-def registrar_tiempo(event_code):
-    try:
-        init_db()
-        event_code = event_code.strip()
-        data = request.get_json()
-        action = data.get('action', '').lower()
-        serie_numero = data.get('serie_numero')
-        carril = data.get('carril')
-        timestamp = data.get('timestamp')
-        if not timestamp:
-            timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-        if action not in ('salida', 'llegada'):
-            return jsonify({"error": "action debe ser 'salida' o 'llegada'"}), 400
-        if action == 'llegada' and (carril is None or not (1 <= carril <= 10)):
-            return jsonify({"error": "carril requerido para llegada (1-10)"}), 400
-        if not serie_numero or not (1 <= serie_numero <= 1000):
-            return jsonify({"error": "serie_numero requerido (1-1000)"}), 400
-
-        timestamp_clean = truncate_to_ms(timestamp)
-
         conn = get_db_conn()
-        cur = conn.cursor()
-
-        # Reemplazar acciones anteriores
-        if action == 'salida':
-            cur.execute("""
-                UPDATE eventos_tiempo
-                SET reemplazado_por = nextval('eventos_tiempo_id_seq')
-                WHERE event_code = %s AND serie_numero = %s AND action = 'salida' AND reemplazado_por IS NULL
-            """, (event_code, serie_numero))
-        else:
-            cur.execute("""
-                UPDATE eventos_tiempo
-                SET reemplazado_por = nextval('eventos_tiempo_id_seq')
-                WHERE event_code = %s AND serie_numero = %s AND carril = %s AND action = 'llegada' AND reemplazado_por IS NULL
-            """, (event_code, serie_numero, carril))
-
-        # Insertar nuevo registro
-        if action == 'salida':
-            cur.execute('''
-                INSERT INTO eventos_tiempo (event_code, serie_numero, action, timestamp_iso)
-                VALUES (%s, %s, %s, %s)
-            ''', (event_code, serie_numero, 'salida', timestamp_clean))
-        else:
-            cur.execute('''
-                INSERT INTO eventos_tiempo (event_code, serie_numero, carril, action, timestamp_iso)
-                VALUES (%s, %s, %s, %s, %s)
-            ''', (event_code, serie_numero, carril, 'llegada', timestamp_clean))
-
-        conn.commit()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("""
+            SELECT nombre, apellido, genero, club, prueba, categoria, edad
+            FROM nadadores
+            WHERE event_code = %s
+            ORDER BY categoria, genero, prueba, apellido, nombre
+        """, (event_code,))
+        inscritos = cur.fetchall()
         cur.close()
         conn.close()
-        return jsonify({"status": "ok"}), 201
+        return jsonify([dict(row) for row in inscritos]), 200
     except Exception as e:
-        logging.exception("Error al registrar tiempo")
+        logging.exception("Error al obtener inscritos")
         return jsonify({"error": str(e)}), 500
 
-# --- Obtener tiempos por serie ---
-@app.route('/api/eventos/<event_code>/tiempos/<int:serie_numero>')
-def obtener_tiempos_serie(event_code, serie_numero):
+# --- 2. Obtener tiempos en vivo (preliminares y finales) ---
+@app.route('/api/eventos/<event_code>/tiempos')
+def get_tiempos(event_code):
     try:
-        init_db()
         conn = get_db_conn()
-        cur = conn.cursor()
-        cur.execute('''
-            SELECT action, timestamp_iso FROM eventos_tiempo
-            WHERE event_code = %s AND serie_numero = %s AND action = 'salida' AND reemplazado_por IS NULL
-            ORDER BY id DESC LIMIT 1
-        ''', (event_code, serie_numero))
-        salida = cur.fetchone()
-
-        cur.execute('''
-            SELECT carril, timestamp_iso FROM eventos_tiempo
-            WHERE event_code = %s AND serie_numero = %s AND action = 'llegada' AND reemplazado_por IS NULL
-            ORDER BY id
-        ''', (event_code, serie_numero))
-        llegadas = cur.fetchall()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("""
+            SELECT evento_completo, serie_numero, carril, nombre_completo, club, tiempo_neto
+            FROM eventos_tiempo
+            WHERE event_code = %s AND tiempo_neto IS NOT NULL AND tiempo_neto > 0
+            ORDER BY evento_completo, serie_numero, carril
+        """, (event_code,))
+        tiempos = cur.fetchall()
         cur.close()
         conn.close()
-
-        return jsonify({
-            "serie_numero": serie_numero,
-            "salida": salida[1] if salida else None,
-            "llegadas": {r[0]: r[1] for r in llegadas}
-        }), 200
+        return jsonify([dict(row) for row in tiempos]), 200
     except Exception as e:
         logging.exception("Error al obtener tiempos")
         return jsonify({"error": str(e)}), 500
 
-# --- Calcular resultados netos ---
+# --- 3. Obtener resultados finales (con posición) ---
 @app.route('/api/eventos/<event_code>/resultados')
-def obtener_resultados_netos(event_code):
+def get_resultados(event_code):
     try:
-        init_db()
         conn = get_db_conn()
-        cur = conn.cursor()
-        cur.execute('''
-            SELECT serie_numero, action, carril, timestamp_iso
-            FROM eventos_tiempo
-            WHERE event_code = %s AND reemplazado_por IS NULL
-            ORDER BY serie_numero, id
-        ''', (event_code,))
-        eventos = cur.fetchall()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("""
+            SELECT evento_completo, posicion, nombre_completo, club, tiempo_neto
+            FROM resultados
+            WHERE event_code = %s AND tiempo_neto IS NOT NULL AND tiempo_neto > 0
+            ORDER BY evento_completo, posicion
+        """, (event_code,))
+        resultados = cur.fetchall()
         cur.close()
         conn.close()
-
-        series = {}
-        for serie_num, action, carril, ts in eventos:
-            if serie_num not in series:
-                series[serie_num] = {"salida": None, "llegadas": {}}
-            if action == "salida":
-                series[serie_num]["salida"] = ts
-            elif action == "llegada" and carril is not None:
-                series[serie_num]["llegadas"][carril] = ts
-
-        resultados = []
-        for serie_num, data in series.items():
-            if not data["salida"]:
-                continue
-            salida_dt = parse_iso_ts(data["salida"])
-            for carril, llegada_ts in data["llegadas"].items():
-                try:
-                    llegada_dt = parse_iso_ts(llegada_ts)
-                    neto = (llegada_dt - salida_dt).total_seconds()
-                    if neto >= 0:
-                        resultados.append({
-                            "serie_numero": serie_num,
-                            "carril": carril,
-                            "tiempo_neto": round(neto, 2),
-                            "estado": "válido"
-                        })
-                except:
-                    continue
-
-        return jsonify(resultados), 200
+        return jsonify([dict(row) for row in resultados]), 200
     except Exception as e:
-        logging.exception("Error al calcular resultados")
+        logging.exception("Error al obtener resultados")
+        return jsonify({"error": str(e)}), 500
+
+# --- 4. Obtener medallero (solo competitivo) ---
+@app.route('/api/eventos/<event_code>/medallero')
+def get_medallero(event_code):
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        # Excluir pruebas de Exhibición
+        cur.execute("""
+            SELECT 
+                club,
+                COUNT(CASE WHEN posicion = 1 THEN 1 END) as oros,
+                COUNT(CASE WHEN posicion = 2 THEN 1 END) as platas,
+                COUNT(CASE WHEN posicion = 3 THEN 1 END) as bronces
+            FROM resultados
+            WHERE event_code = %s 
+              AND tiempo_neto IS NOT NULL 
+              AND tiempo_neto > 0
+              AND posicion IN (1, 2, 3)
+              AND evento_completo NOT ILIKE '%Exhibición%'
+            GROUP BY club
+            ORDER BY oros DESC, platas DESC, bronces DESC
+        """, (event_code,))
+        medallero = cur.fetchall()
+        cur.close()
+        conn.close()
+        return jsonify([dict(row) for row in medallero]), 200
+    except Exception as e:
+        logging.exception("Error al obtener medallero")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
