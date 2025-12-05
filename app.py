@@ -8,32 +8,33 @@ SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 
 supabase = create_client(SUPABASE_URL.strip(), SUPABASE_ANON_KEY)
 
-# --- Estilo completo: oscuro, profesional, legible + fijar header ---
+# --- Estilo: fondo oscuro + títulos SIEMPRE BLANCOS + legibilidad garantizada ---
 st.markdown("""
 <style>
-    /* Fondo oscuro principal */
+    /* Fondo oscuro general */
     .main, .stApp {
         background-color: #0f172a !important;
         color: #f8fafc;
     }
-    /* Header fijo y visible al hacer scroll */
-    .stApp > header {
-        background-color: #0f172a !important;
-        z-index: 1000;
-    }
-    .stApp > header *, .stApp > header a, .stApp > header .stMarkdown {
-        color: #f8fafc !important;
-    }
-    h1, h2, h3, h4, h5, h6 {
-        color: #f8fafc !important;
+
+    /* ✅ Títulos SIEMPRE BLANCOS, incluso al hacer scroll */
+    h1, h2, h3, h4, h5, h6,
+    .stApp > header *,
+    .stApp > header a,
+    .stApp > header .stMarkdown,
+    .stTitle,
+    .stSubheader {
+        color: #ffffff !important;
         font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif !important;
         font-weight: bold;
-        text-shadow: 0 0 6px rgba(56, 189, 248, 0.5);
     }
-    .stTitle {
-        text-align: center;
-        margin-bottom: 0.5rem;
+
+    /* Header fijo con fondo oscuro al hacer scroll */
+    .stApp > header {
+        background-color: #0f172a !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
+
     .evento-header {
         text-align: center;
         padding: 0.8rem;
@@ -43,8 +44,9 @@ st.markdown("""
         border: 2px solid #38bdf8;
         font-size: 1.4rem;
         font-weight: bold;
-        color: white;
+        color: #ffffff !important;
     }
+
     .stExpander {
         background-color: #1e293b !important;
         border: 1px solid #334155 !important;
@@ -52,57 +54,55 @@ st.markdown("""
         color: #f8fafc !important;
     }
     .stExpander > div[role="button"] {
-        color: #f8fafc !important;
+        color: #ffffff !important;
         font-weight: bold;
         font-size: 1.25rem;
     }
-    .fila-tiempo {
-        background-color: #1e293b;
-        padding: 10px;
-        border-radius: 6px;
-        margin: 8px 0;
-        border-left: 3px solid #38bdf8;
+
+    .col-carril, .col-posicion, .col-nombre, .col-club, .col-tiempo {
+        padding: 8px 0;
+        font-size: 1.05rem;
     }
-    .col-pos {
+
+    .col-carril {
         font-weight: bold;
-        font-size: 1.1rem;
+        color: #94a3b8;
         text-align: center;
-        min-width: 40px;
     }
-    .col-pos.puesto-1 {
-        color: #fbbf24; /* Dorado */
+
+    .col-posicion {
+        font-weight: bold;
+        text-align: center;
+        min-width: 50px;
     }
-    .col-pos.puesto-2 {
-        color: #cbd5e1; /* Plata */
-    }
-    .col-pos.puesto-3 {
-        color: #fda4af; /* Bronce */
-    }
+    .col-posicion.puesto-1 { color: #fbbf24; } /* Oro */
+    .col-posicion.puesto-2 { color: #cbd5e1; } /* Plata */
+    .col-posicion.puesto-3 { color: #fda4af; } /* Bronce */
+
     .col-nombre {
         font-weight: bold;
         color: #f8fafc;
-        font-size: 1.1rem;
         text-align: left;
     }
     .col-club {
         color: #94a3b8;
-        font-size: 1rem;
         text-align: left;
     }
     .col-tiempo {
         font-weight: bold;
-        font-size: 1.2rem;
         text-align: right;
         font-family: 'Courier New', monospace;
     }
     .mejor-tiempo {
-        color: #34d399 !important; /* Verde brillante para el mejor tiempo */
+        color: #34d399 !important; /* Verde para mejor tiempo */
     }
+
     .stInfo, .stSuccess, .stWarning, .stError {
         background-color: #1e293b !important;
         color: #f8fafc !important;
         border-left: 4px solid #38bdf8;
     }
+
     .pie {
         text-align: center;
         color: #94a3b8;
@@ -136,7 +136,7 @@ def formatear_tiempo_segundos(segundos) -> str:
         return "—"
 
 try:
-    # Paso 1: Obtener event_code y nombre_evento desde eventos_meta
+    # Obtener event_code y nombre_evento desde eventos_meta
     event_code = None
     nombre_evento = "Evento de Natación"
 
@@ -155,7 +155,7 @@ try:
 
     st.markdown(f'<div class="evento-header">{nombre_evento}</div>', unsafe_allow_html=True)
 
-    # Paso 2: Cargar tiempos
+    # Cargar tiempos
     res = supabase.table("eventos_tiempo").select(
         "evento_completo, serie_numero, carril, nombre_completo, club, tiempo_neto"
     ).eq("event_code", event_code).execute()
@@ -167,80 +167,67 @@ try:
 
         for prueba in sorted(pruebas.keys()):
             with st.expander(f"▶️ {prueba}", expanded=True):
-                # Agrupar por serie
                 series = defaultdict(list)
                 for t in pruebas[prueba]:
                     series[t["serie_numero"]].append(t)
-                
+
                 for serie_num in sorted(series.keys()):
                     st.markdown(f"**Serie {serie_num}**")
-                    
-                    # Filtrar tiempos válidos y ordenar por tiempo_neto (menor es mejor)
-                    tiempos_validos = [t for t in series[serie_num] if t.get("tiempo_neto", 0) > 0]
-                    if not tiempos_validos:
-                        # Mostrar todos aunque no tengan tiempo
-                        tiempos_a_mostrar = sorted(series[serie_num], key=lambda x: x.get("carril", 0))
-                        for t in tiempos_a_mostrar:
-                            col1, col2, col3, col4 = st.columns([1, 3, 3, 2])
-                            with col1:
-                                st.markdown(f'<div class="col-pos">C{t["carril"]}</div>', unsafe_allow_html=True)
-                            with col2:
-                                st.markdown(f'<div class="col-nombre">{t.get("nombre_completo", "—")}</div>', unsafe_allow_html=True)
-                            with col3:
-                                st.markdown(f'<div class="col-club">{t.get("club", "—")}</div>', unsafe_allow_html=True)
-                            with col4:
-                                st.markdown(f'<div class="col-tiempo">—</div>', unsafe_allow_html=True)
-                            st.markdown('<div style="height: 10px;"></div>', unsafe_allow_html=True)
-                        continue
+                    tiempos = series[serie_num]
 
-                    # Ordenar por tiempo para asignar posiciones
-                    tiempos_ordenados = sorted(tiempos_validos, key=lambda x: x["tiempo_neto"])
-                    # Mapa: (nombre_completo, club) → posición
-                    posicion_map = {}
-                    for idx, t in enumerate(tiempos_ordenados, start=1):
-                        key = (t["nombre_completo"], t["club"])
-                        posicion_map[key] = idx
+                    # Filtrar y ordenar tiempos válidos para asignar posiciones
+                    validos = [t for t in tiempos if t.get("tiempo_neto", 0) > 0]
+                    if validos:
+                        validos_sorted = sorted(validos, key=lambda x: x["tiempo_neto"])
+                        mejor_tiempo_valor = validos_sorted[0]["tiempo_neto"]
+                        # Mapa: (nombre, club) → posición
+                        posicion_map = {
+                            (t["nombre_completo"], t["club"]): i + 1
+                            for i, t in enumerate(validos_sorted)
+                        }
+                    else:
+                        mejor_tiempo_valor = None
+                        posicion_map = {}
 
-                    # El mejor tiempo (primero en la lista ordenada)
-                    mejor_tiempo = tiempos_ordenados[0]["tiempo_neto"]
-
-                    # Mostrar en orden de carril
-                    tiempos_por_carril = sorted(series[serie_num], key=lambda x: x.get("carril", 0))
-                    for t in tiempos_por_carril:
+                    # Mostrar todos los nadadores en orden de carril
+                    tiempos_ordenados_carril = sorted(tiempos, key=lambda x: x.get("carril", 999))
+                    for t in tiempos_ordenados_carril:
+                        carril = t["carril"]
                         nombre = t.get("nombre_completo", "—")
                         club = t.get("club", "—")
-                        tiempo = t.get("tiempo_neto")
-                        carril = t["carril"]
+                        tiempo_val = t.get("tiempo_neto")
                         key = (nombre, club)
 
                         # Determinar posición
-                        if tiempo and tiempo > 0:
+                        if tiempo_val and tiempo_val > 0:
                             posicion = posicion_map.get(key, "—")
-                            tiempo_str = formatear_tiempo_segundos(tiempo)
-                            # Clase de color para posición (podio)
-                            clase_pos = ""
-                            if posicion == 1:
-                                clase_pos = "puesto-1"
-                            elif posicion == 2:
-                                clase_pos = "puesto-2"
-                            elif posicion == 3:
-                                clase_pos = "puesto-3"
-                            # Clase para mejor tiempo
-                            clase_tiempo = "mejor-tiempo" if tiempo == mejor_tiempo else ""
+                            tiempo_str = formatear_tiempo_segundos(tiempo_val)
+                            es_mejor = (tiempo_val == mejor_tiempo_valor)
                         else:
                             posicion = "—"
                             tiempo_str = "—"
-                            clase_pos = ""
-                            clase_tiempo = ""
+                            es_mejor = False
 
-                        col1, col2, col3, col4 = st.columns([1, 3, 3, 2])
+                        # Estilos para posición (podio)
+                        clase_pos = ""
+                        if posicion == 1:
+                            clase_pos = "puesto-1"
+                        elif posicion == 2:
+                            clase_pos = "puesto-2"
+                        elif posicion == 3:
+                            clase_pos = "puesto-3"
+
+                        col1, col2, col3, col4, col5 = st.columns([1, 1, 3, 3, 2])
                         with col1:
-                            st.markdown(f'<div class="col-pos {clase_pos}">{posicion}</div>', unsafe_allow_html=True)
+                            st.markdown(f'<div class="col-carril">C{carril}</div>', unsafe_allow_html=True)
                         with col2:
-                            st.markdown(f'<div class="col-nombre">{nombre}</div>', unsafe_allow_html=True)
+                            st.markdown(f'<div class="col-posicion {clase_pos}">{posicion}</div>', unsafe_allow_html=True)
                         with col3:
-                            st.markdown(f'<div class="col-club">{club}</div>', unsafe_allow_html=True)
+                            st.markdown(f'<div class="col-nombre">{nombre}</div>', unsafe_allow_html=True)
                         with col4:
+                            st.markdown(f'<div class="col-club">{club}</div>', unsafe_allow_html=True)
+                        with col5:
+                            clase_tiempo = "mejor-tiempo" if es_mejor else ""
                             st.markdown(f'<div class="col-tiempo {clase_tiempo}">{tiempo_str}</div>', unsafe_allow_html=True)
                         st.markdown('<div style="height: 10px;"></div>', unsafe_allow_html=True)
     else:
