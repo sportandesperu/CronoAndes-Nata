@@ -4,7 +4,7 @@ from collections import defaultdict
 import time
 
 # --- Configuración de Supabase ---
-SUPABASE_URL = "https://tvbmajrcylbzgalxivoy.supabase.co"  # ✅ Sin espacios al final
+SUPABASE_URL = "https://tvbmajrcylbzgalxivoy.supabase.co"
 SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2Ym1hanJjeWxiemdhbHhpdm95Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQyNDMyMzIsImV4cCI6MjA3OTgxOTIzMn0.4FbEulTNGbAxFV0fp99TnHc3Yke4jYNgoMd3JNqpCv4"
 
 supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -16,16 +16,21 @@ st.set_page_config(
     page_icon="🏆"
 )
 
-# --- Estilos profesionales (inspirados en estándares internacionales) ---
+# --- Base64 del logo (montañas verdes/amarillas sobre fondo transparente) ---
+# ⚠️ Este es un placeholder. Reemplázalo con el base64 real de tu imagen si deseas usar la tuya.
+LOGO_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAEgAAAAQCAYAAAB7W95KAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAADWSURBVFhH7ZrLDoAgDESf//+PzCQpNlUWVtFkIaD3y3sKmS3b1mG6d0uqXQa2fK7j7a4b5z0KzQdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6Qd......"  # ⚠️ ¡ESTE ES UN PLACEHOLDER!
+
+# Si tienes tu propia imagen, reemplaza LOGO_BASE64 con el verdadero string base64.
+# Puedes generar uno aquí: https://base64.guru/converter/encode/image
+
+# --- Estilos profesionales ---
 st.markdown("""
 <style>
-    /* Fondo general claro y suave */
     .main, .stApp, [data-testid="stAppViewContainer"] {
         background-color: #f8f9fa !important;
         color: #1a1a1a !important;
     }
 
-    /* Títulos en negro/negro suave */
     h1, h2, h3, h4, h5, h6,
     .stMarkdown h1, .stMarkdown h2, .stMarkdown h3,
     [data-testid="stHeadingWithActionElements"] h1,
@@ -36,12 +41,10 @@ st.markdown("""
         font-weight: bold !important;
     }
 
-    /* Header de la app */
     [data-testid="stHeader"] {
         background-color: #ffffff !important;
     }
 
-    /* Título del evento: destacado pero suave */
     .evento-header {
         text-align: center;
         padding: 0.8rem;
@@ -55,7 +58,6 @@ st.markdown("""
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
 
-    /* --- Expander: estilo profesional (fondo blanco, borde suave) --- */
     .stExpander {
         background-color: #ffffff !important;
         border: 1px solid #d1d5db !important;
@@ -70,13 +72,11 @@ st.markdown("""
         font-size: 1.25rem;
         padding: 0.8rem 1rem;
     }
-    /* Asegurar que el texto del expander siempre sea oscuro */
     .stExpander > div[role="button"] *,
     .stExpander[open] > div[role="button"] * {
         color: #111827 !important;
     }
 
-    /* --- Encabezados de columna (como en campeonatos mundiales) --- */
     .header-row {
         display: flex;
         background-color: #f3f4f6;
@@ -95,7 +95,6 @@ st.markdown("""
     .header-tiempo { width: 14%; text-align: right; }
     .header-dif { width: 14%; text-align: right; }
 
-    /* --- Celdas de datos --- */
     .col-carril, .col-posicion, .col-nombre, .col-club, .col-tiempo, .col-dif {
         padding: 8px 0;
         font-size: 1.05rem;
@@ -111,9 +110,9 @@ st.markdown("""
         text-align: center;
         min-width: 50px;
     }
-    .col-posicion.puesto-1 { color: #d97706; font-weight: bold; }    /* 🥇 */
-    .col-posicion.puesto-2 { color: #6b7280; font-weight: bold; }    /* 🥈 */
-    .col-posicion.puesto-3 { color: #be123c; font-weight: bold; }    /* 🥉 */
+    .col-posicion.puesto-1 { color: #d97706; font-weight: bold; }
+    .col-posicion.puesto-2 { color: #6b7280; font-weight: bold; }
+    .col-posicion.puesto-3 { color: #be123c; font-weight: bold; }
     .col-nombre {
         font-weight: 600;
         color: #111827;
@@ -129,7 +128,7 @@ st.markdown("""
         font-family: 'Courier New', monospace;
     }
     .mejor-tiempo {
-        color: #059669 !important; /* verde oscuro profesional */
+        color: #059669 !important;
     }
 
     .stInfo, .stSuccess, .stWarning, .stError {
@@ -137,13 +136,29 @@ st.markdown("""
         color: #065f46 !important;
         border-left: 4px solid #10b981;
     }
-    .pie {
-        text-align: center;
-        color: #6b7280;
-        font-size: 0.9rem;
+
+    /* --- Footer mejorado --- */
+    .footer {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 1.2rem 0;
         margin-top: 2rem;
-        padding-top: 1rem;
         border-top: 1px solid #e5e7eb;
+        color: #6b7280;
+        font-size: 0.95rem;
+    }
+    .footer img {
+        height: 36px;
+        opacity: 0.9;
+    }
+    .footer a {
+        color: #3b82f6;
+        text-decoration: none;
+    }
+    .footer a:hover {
+        text-decoration: underline;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -172,18 +187,15 @@ def formatear_diferencia(segundos) -> str:
     except (ValueError, TypeError):
         return "—"
 
-# --- Título principal ---
 st.title("🏆 CronoAndes — Resultados en Vivo")
 
 try:
-    # Obtener event_code más reciente
     nad_res = supabase.table("nadadores").select("event_code").order("id", desc=True).limit(1).execute()
     if not nad_res.data:
         st.error("❌ No hay eventos registrados aún.")
         st.stop()
     event_code = nad_res.data[0]["event_code"]
 
-    # Obtener nombre del evento
     nombre_evento = "Evento en vivo"
     meta_res = supabase.table("eventos_meta").select("nombre_evento").eq("event_code", event_code).limit(1).execute()
     if meta_res.data and meta_res.data[0].get("nombre_evento"):
@@ -191,7 +203,6 @@ try:
 
     st.markdown(f'<div class="evento-header">{nombre_evento}</div>', unsafe_allow_html=True)
 
-    # Cargar tiempos
     res = supabase.table("eventos_tiempo").select(
         "evento_completo, serie_numero, carril, nombre_completo, club, tiempo_neto"
     ).eq("event_code", event_code).execute()
@@ -210,7 +221,6 @@ try:
                 for serie_num in sorted(series.keys()):
                     st.markdown(f"**Serie {serie_num}**")
 
-                    # Fila de encabezados (siempre visible)
                     st.markdown("""
                     <div class="header-row">
                         <div class="header-carril">Carril</div>
@@ -248,7 +258,7 @@ try:
                             posicion = posicion_map.get(key, "—")
                             tiempo_str = formatear_tiempo_segundos(tiempo_val)
                             es_mejor = (tiempo_val == mejor_tiempo_valor)
-                            dif_str = formatear_diferencia(tiempo_val - mejor_tiempo_valor)
+                            dif_str = formatear_diferencia(tiempo_val - mejor_tiempo_valor) if mejor_tiempo_valor else "—"
                         else:
                             posicion = "—"
                             tiempo_str = "—"
@@ -284,7 +294,14 @@ try:
 except Exception as e:
     st.error(f"❌ Error al cargar los datos: {e}")
 
-st.markdown('<div class="pie">sportandesperu@gmail.com • Actualización automática cada 5 segundos</div>', unsafe_allow_html=True)
+# --- Footer con logo y correo ---
+st.markdown(f"""
+<div class="footer">
+    <img src="data:image/png;base64,{LOGO_BASE64}" alt="CronoAndes Logo">
+    <a href="mailto:sportandesperu@gmail.com">sportandesperu@gmail.com</a>
+    • Actualización automática cada 5 segundos
+</div>
+""", unsafe_allow_html=True)
 
 # --- Actualización automática ---
 time.sleep(5)
