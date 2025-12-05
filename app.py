@@ -1,34 +1,26 @@
 import streamlit as st
 from supabase import create_client
 from collections import defaultdict
+import time
 
-# Configuración de Supabase (SOLO LECTURA)
+# --- Configuración de Supabase (SOLO LECTURA) ---
 SUPABASE_URL = "https://tvbmajrcylbzgalxivoy.supabase.co"
 SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2Ym1hanJjeWxiemdhbHhpdm95Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQyNDMyMzIsImV4cCI6MjA3OTgxOTIzMn0.4FbEulTNGbAxFV0fp99TnHc3Yke4jYNgoMd3JNqpCv4"
 
-supabase = create_client(SUPABASE_URL.strip(), SUPABASE_ANON_KEY)
+supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-# --- Estilo: fondo oscuro + títulos SIEMPRE BLANCOS ---
+# --- Configuración de la página (¡clave: theme="dark"!) ---
+st.set_page_config(
+    page_title="🏆 CronoAndes — Resultados en Vivo",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+    page_icon="🏆",
+    theme="dark"  # 👈 Esto activa el modo oscuro nativo de Streamlit
+)
+
+# --- Estilos personalizados (ahora más compatibles con theme="dark") ---
 st.markdown("""
 <style>
-    .main, .stApp {
-        background-color: #0f172a !important;
-        color: #f8fafc;
-    }
-    h1, h2, h3, h4, h5, h6,
-    .stApp > header *,
-    .stApp > header a,
-    .stApp > header .stMarkdown,
-    .stTitle,
-    .stSubheader {
-        color: #ffffff !important;
-        font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif !important;
-        font-weight: bold;
-    }
-    .stApp > header {
-        background-color: #0f172a !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    }
     .evento-header {
         text-align: center;
         padding: 0.8rem;
@@ -101,14 +93,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.set_page_config(
-    page_title="🏆 CronoAndes — Resultados en Vivo",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
-
-st.title("🏆 CronoAndes — Resultados en Vivo")
-
+# --- Función auxiliar: formatear tiempo ---
 def formatear_tiempo_segundos(segundos) -> str:
     if segundos is None or segundos <= 0:
         return "—"
@@ -122,8 +107,12 @@ def formatear_tiempo_segundos(segundos) -> str:
     except (ValueError, TypeError):
         return "—"
 
+# --- Título principal ---
+st.title("🏆 CronoAndes — Resultados en Vivo")
+
+# --- Cargar y mostrar datos ---
 try:
-    # Paso 1: Obtener el event_code más reciente desde nadadores (fuente confiable)
+    # Paso 1: Obtener el event_code más reciente desde nadadores
     nad_res = supabase.table("nadadores").select("event_code").order("id", desc=True).limit(1).execute()
     if not nad_res.data:
         st.error("❌ No hay eventos registrados aún.")
@@ -131,7 +120,7 @@ try:
     
     event_code = nad_res.data[0]["event_code"]
 
-    # Paso 2: Buscar el nombre_evento en eventos_meta usando ese event_code
+    # Paso 2: Buscar nombre del evento en eventos_meta
     nombre_evento = "Evento en vivo"
     meta_res = supabase.table("eventos_meta").select("nombre_evento").eq("event_code", event_code).limit(1).execute()
     if meta_res.data and meta_res.data[0].get("nombre_evento"):
@@ -217,14 +206,17 @@ try:
 except Exception as e:
     st.error(f"❌ Error al cargar los datos: {e}")
 
-# Auto-refresh
-st.markdown(
-    """
-    <script>
-    setTimeout(() => window.location.reload(), 2000);
-    </script>
-    """,
-    unsafe_allow_html=True
-)
+# --- Pie de página ---
+st.markdown('<div class="pie">sportandesperu@gmail.com • Actualización automática cada 5 segundos</div>', unsafe_allow_html=True)
 
-st.markdown('<div class="pie">sportandesperu@gmail.com • Actualización automática activa</div>', unsafe_allow_html=True)
+# --- Actualización automática en vivo (sin recargar toda la página) ---
+# Streamlit no permite setTimeout en el lado del cliente sin recargar,
+# pero podemos usar st.rerun() con un delay controlado.
+# Para evitar recargas inmediatas en bucle, usamos st.empty + time.sleep
+
+# Nota: Este enfoque es compatible con Streamlit >= 1.27
+# Si usas una versión anterior, considera usar st.experimental_rerun()
+
+# Esperar 5 segundos y recargar
+time.sleep(5)
+st.rerun()
