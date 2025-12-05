@@ -2,7 +2,6 @@ import streamlit as st
 from supabase import create_client
 from datetime import datetime
 from collections import defaultdict
-from streamlit_autorefresh import st_autorefresh
 
 # --- Configuración de Supabase (SOLO LECTURA) ---
 SUPABASE_URL = "https://tvbmajrcylbzgalxivoy.supabase.co"
@@ -162,3 +161,14 @@ with st.expander("🔍 Ver otro evento"):
 # --- Pie de página discreto ---
 st.divider()
 st.caption("Actualización automática activa • sportandesperu@gmail.com")
+# Auto-refresh con JavaScript (sin dependencias externas)
+st.markdown(
+    """
+    <script>
+    setTimeout(function() {
+        window.location.reload();
+    }, 8000); // Refrescar cada 8000 ms = 8 segundos
+    </script>
+    """,
+    unsafe_allow_html=True
+)
