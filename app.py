@@ -9,18 +9,41 @@ SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 
 supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-# --- Configuración de la página (¡clave: theme="dark"!) ---
+# --- Configuración de la página (SIN theme="dark") ---
 st.set_page_config(
     page_title="🏆 CronoAndes — Resultados en Vivo",
     layout="wide",
     initial_sidebar_state="collapsed",
-    page_icon="🏆",
-    theme="dark"  # 👈 Esto activa el modo oscuro nativo de Streamlit
+    page_icon="🏆"
+    # ⚠️ theme="dark" ya NO es válido en Streamlit >=1.35
 )
 
-# --- Estilos personalizados (ahora más compatibles con theme="dark") ---
+# --- Estilos personalizados (fuerza fondo oscuro y texto blanco) ---
 st.markdown("""
 <style>
+    /* Fondo oscuro en toda la app */
+    .main, .stApp, [data-testid="stAppViewContainer"] {
+        background-color: #0f172a !important;
+        color: #f8fafc !important;
+    }
+
+    /* Títulos siempre blancos */
+    h1, h2, h3, h4, h5, h6,
+    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3,
+    [data-testid="stHeadingWithActionElements"] h1,
+    [data-testid="stHeadingWithActionElements"] div,
+    .stTitle, .stHeader, .stSubheader {
+        color: #ffffff !important;
+        font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif !important;
+        font-weight: bold !important;
+    }
+
+    /* Fondo del header (barra superior) */
+    [data-testid="stHeader"] {
+        background-color: #0f172a !important;
+    }
+
+    /* Estilos personalizados (sin cambios) */
     .evento-header {
         text-align: center;
         padding: 0.8rem;
@@ -209,14 +232,6 @@ except Exception as e:
 # --- Pie de página ---
 st.markdown('<div class="pie">sportandesperu@gmail.com • Actualización automática cada 5 segundos</div>', unsafe_allow_html=True)
 
-# --- Actualización automática en vivo (sin recargar toda la página) ---
-# Streamlit no permite setTimeout en el lado del cliente sin recargar,
-# pero podemos usar st.rerun() con un delay controlado.
-# Para evitar recargas inmediatas en bucle, usamos st.empty + time.sleep
-
-# Nota: Este enfoque es compatible con Streamlit >= 1.27
-# Si usas una versión anterior, considera usar st.experimental_rerun()
-
-# Esperar 5 segundos y recargar
+# --- Actualización automática ---
 time.sleep(5)
 st.rerun()
