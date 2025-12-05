@@ -4,7 +4,7 @@ from collections import defaultdict
 import time
 
 # --- Configuración de Supabase ---
-SUPABASE_URL = "https://tvbmajrcylbzgalxivoy.supabase.co"
+SUPABASE_URL = "https://tvbmajrcylbzgalxivoy.supabase.co"  # ✅ Sin espacios al final
 SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2Ym1hanJjeWxiemdhbHhpdm95Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQyNDMyMzIsImV4cCI6MjA3OTgxOTIzMn0.4FbEulTNGbAxFV0fp99TnHc3Yke4jYNgoMd3JNqpCv4"
 
 supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -16,75 +16,77 @@ st.set_page_config(
     page_icon="🏆"
 )
 
-# --- Estilos personalizados ---
+# --- Estilos profesionales (inspirados en estándares internacionales) ---
 st.markdown("""
 <style>
+    /* Fondo general claro y suave */
     .main, .stApp, [data-testid="stAppViewContainer"] {
-        background-color: #0f172a !important;
-        color: #f8fafc !important;
+        background-color: #f8f9fa !important;
+        color: #1a1a1a !important;
     }
 
+    /* Títulos en negro/negro suave */
     h1, h2, h3, h4, h5, h6,
     .stMarkdown h1, .stMarkdown h2, .stMarkdown h3,
     [data-testid="stHeadingWithActionElements"] h1,
     [data-testid="stHeadingWithActionElements"] div,
     .stTitle, .stHeader, .stSubheader {
-        color: #ffffff !important;
+        color: #111827 !important;
         font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif !important;
         font-weight: bold !important;
     }
 
+    /* Header de la app */
     [data-testid="stHeader"] {
-        background-color: #0f172a !important;
+        background-color: #ffffff !important;
     }
 
+    /* Título del evento: destacado pero suave */
     .evento-header {
         text-align: center;
         padding: 0.8rem;
-        background: #1e293b;
+        background: #e0f2fe;
         border-radius: 8px;
         margin: 1rem 0;
         border: 2px solid #38bdf8;
         font-size: 1.4rem;
         font-weight: bold;
-        color: #ffffff !important;
+        color: #0c4a6e !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
 
-    /* --- Expander: texto SIEMPRE blanco --- */
+    /* --- Expander: estilo profesional (fondo blanco, borde suave) --- */
     .stExpander {
-        background-color: #1e293b !important;
-        border: 1px solid #334155 !important;
+        background-color: #ffffff !important;
+        border: 1px solid #d1d5db !important;
         border-radius: 10px !important;
-        color: #f8fafc !important;
+        color: #1f2937 !important;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+        margin-bottom: 1.2rem;
     }
     .stExpander > div[role="button"] {
-        color: #ffffff !important;
+        color: #111827 !important;
         font-weight: bold;
         font-size: 1.25rem;
+        padding: 0.8rem 1rem;
     }
-    .stExpander > div[role="button"] > div,
-    .stExpander > div[role="button"] > div > div,
-    .stExpander > div[role="button"] h3,
-    .stExpander > div[role="button"] span {
-        color: #ffffff !important;
-        font-weight: bold !important;
-    }
-    .stExpander[open] > div[role="button"],
-    .stExpander[open] > div[role="button"] > div,
-    .stExpander[open] > div[role="button"] > div > div {
-        color: #ffffff !important;
+    /* Asegurar que el texto del expander siempre sea oscuro */
+    .stExpander > div[role="button"] *,
+    .stExpander[open] > div[role="button"] * {
+        color: #111827 !important;
     }
 
-    /* --- Encabezados de columna --- */
+    /* --- Encabezados de columna (como en campeonatos mundiales) --- */
     .header-row {
         display: flex;
-        background-color: #1e293b;
+        background-color: #f3f4f6;
         padding: 10px 0;
         font-weight: bold;
-        color: #cbd5e1;
-        border-bottom: 2px solid #334155;
+        color: #374151;
+        border-bottom: 2px solid #e5e7eb;
         margin-bottom: 12px;
         border-radius: 6px;
+        font-size: 0.95rem;
     }
     .header-carril { width: 8%; text-align: center; }
     .header-pos { width: 8%; text-align: center; }
@@ -93,13 +95,15 @@ st.markdown("""
     .header-tiempo { width: 14%; text-align: right; }
     .header-dif { width: 14%; text-align: right; }
 
+    /* --- Celdas de datos --- */
     .col-carril, .col-posicion, .col-nombre, .col-club, .col-tiempo, .col-dif {
         padding: 8px 0;
         font-size: 1.05rem;
+        color: #1f2937;
     }
     .col-carril {
         font-weight: bold;
-        color: #94a3b8;
+        color: #4b5563;
         text-align: center;
     }
     .col-posicion {
@@ -107,39 +111,39 @@ st.markdown("""
         text-align: center;
         min-width: 50px;
     }
-    .col-posicion.puesto-1 { color: #fbbf24; }
-    .col-posicion.puesto-2 { color: #cbd5e1; }
-    .col-posicion.puesto-3 { color: #fda4af; }
+    .col-posicion.puesto-1 { color: #d97706; font-weight: bold; }    /* 🥇 */
+    .col-posicion.puesto-2 { color: #6b7280; font-weight: bold; }    /* 🥈 */
+    .col-posicion.puesto-3 { color: #be123c; font-weight: bold; }    /* 🥉 */
     .col-nombre {
-        font-weight: bold;
-        color: #f8fafc;
+        font-weight: 600;
+        color: #111827;
         text-align: left;
     }
     .col-club {
-        color: #94a3b8;
+        color: #4b5563;
         text-align: left;
     }
     .col-tiempo, .col-dif {
-        font-weight: bold;
+        font-weight: 600;
         text-align: right;
         font-family: 'Courier New', monospace;
     }
     .mejor-tiempo {
-        color: #34d399 !important;
+        color: #059669 !important; /* verde oscuro profesional */
     }
 
     .stInfo, .stSuccess, .stWarning, .stError {
-        background-color: #1e293b !important;
-        color: #f8fafc !important;
-        border-left: 4px solid #38bdf8;
+        background-color: #f0fdf4 !important;
+        color: #065f46 !important;
+        border-left: 4px solid #10b981;
     }
     .pie {
         text-align: center;
-        color: #94a3b8;
+        color: #6b7280;
         font-size: 0.9rem;
         margin-top: 2rem;
         padding-top: 1rem;
-        border-top: 1px solid #334155;
+        border-top: 1px solid #e5e7eb;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -158,7 +162,6 @@ def formatear_tiempo_segundos(segundos) -> str:
         return "—"
 
 def formatear_diferencia(segundos) -> str:
-    """Formatea la diferencia al primer lugar (sin minutos, solo +segundos)"""
     if segundos is None or segundos <= 0:
         return "—"
     try:
@@ -169,6 +172,7 @@ def formatear_diferencia(segundos) -> str:
     except (ValueError, TypeError):
         return "—"
 
+# --- Título principal ---
 st.title("🏆 CronoAndes — Resultados en Vivo")
 
 try:
@@ -206,7 +210,7 @@ try:
                 for serie_num in sorted(series.keys()):
                     st.markdown(f"**Serie {serie_num}**")
 
-                    # --- NUEVO: Fila de encabezados ---
+                    # Fila de encabezados (siempre visible)
                     st.markdown("""
                     <div class="header-row">
                         <div class="header-carril">Carril</div>
@@ -232,7 +236,6 @@ try:
                     else:
                         posicion_map = {}
 
-                    # Mostrar en orden de carril
                     tiempos_ordenados_carril = sorted(tiempos, key=lambda x: x.get("carril", 999))
                     for t in tiempos_ordenados_carril:
                         carril = t["carril"]
@@ -245,7 +248,7 @@ try:
                             posicion = posicion_map.get(key, "—")
                             tiempo_str = formatear_tiempo_segundos(tiempo_val)
                             es_mejor = (tiempo_val == mejor_tiempo_valor)
-                            dif_str = formatear_diferencia(tiempo_val - mejor_tiempo_valor) if mejor_tiempo_valor else "—"
+                            dif_str = formatear_diferencia(tiempo_val - mejor_tiempo_valor)
                         else:
                             posicion = "—"
                             tiempo_str = "—"
@@ -275,7 +278,6 @@ try:
                         with col6:
                             st.markdown(f'<div class="col-dif">{dif_str}</div>', unsafe_allow_html=True)
                         st.markdown('<div style="height: 10px;"></div>', unsafe_allow_html=True)
-
     else:
         st.info("⏳ Aún no hay tiempos en vivo. ¡Las carreras están por comenzar!")
 
