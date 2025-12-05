@@ -122,21 +122,31 @@ def formatear_tiempo_segundos(segundos) -> str:
         return "—"
 
 try:
-    # Obtener nombre del evento
-    response = supabase.table("resultados").select("event_code, nombre_evento").order("event_code", desc=True).limit(1).execute()
-    if not response.data:
-        response = supabase.table("nadadores").select("event_code").order("event_code", desc=True).limit(1).execute()
-        if not response.data:
+    # Paso 1: Obtener el event_code más reciente (de nadadores o eventos_meta)
+    event_code = None
+    nombre_evento = "Evento de Natación"
+
+    # Intentar desde eventos_meta (mejor opción)
+    meta_res = supabase.table("eventos_meta").select("event_code, nombre_evento").order("fecha_creacion", desc=True).limit(1).execute()
+    if meta_res.data:
+        event_code = meta_res.data[0]["event_code"]
+        nombre_evento = meta_res.data[0].get("nombre_evento") or event_code
+    else:
+        # Fallback: usar el event_code más reciente de nadadores
+        nad_res = supabase.table("nadadores").select("event_code").order("event_code", desc=True).limit(1).execute()
+        if nad_res.data:
+            event_code = nad_res.data[0]["event_code"]
+            nombre_evento = event_code  # solo código como fallback
+        else:
             st.error("❌ No hay eventos registrados aún.")
             st.stop()
-        nombre_evento = response.data[0]["event_code"]
-    else:
-        nombre_evento = response.data[0].get("nombre_evento") or response.data[0]["event_code"]
 
     st.markdown(f'<div class="evento-header">{nombre_evento}</div>', unsafe_allow_html=True)
 
-    # Cargar tiempos
-    res = supabase.table("eventos_tiempo").select("evento_completo, serie_numero, carril, nombre_completo, club, tiempo_neto").eq("event_code", response.data[0]["event_code"]).execute()
+    # Paso 2: Cargar tiempos usando el event_code obtenido
+    res = supabase.table("eventos_tiempo").select(
+        "evento_completo, serie_numero, carril, nombre_completo, club, tiempo_neto"
+    ).eq("event_code", event_code).execute()
 
     if res.data:
         pruebas = defaultdict(list)
@@ -146,7 +156,6 @@ try:
         for prueba in sorted(pruebas.keys()):
             with st.expander(f"▶️ {prueba}", expanded=True):
                 tiempos = sorted(pruebas[prueba], key=lambda x: (x.get("serie_numero", 1), x.get("carril", 0)))
-                # Agrupar por serie
                 series = defaultdict(list)
                 for t in tiempos:
                     series[t["serie_numero"]].append(t)
