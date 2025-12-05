@@ -3,31 +3,27 @@ from supabase import create_client
 from collections import defaultdict
 import time
 
-# --- Configuración de Supabase (SOLO LECTURA) ---
+# --- Configuración de Supabase ---
 SUPABASE_URL = "https://tvbmajrcylbzgalxivoy.supabase.co"
 SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2Ym1hanJjeWxiemdhbHhpdm95Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQyNDMyMzIsImV4cCI6MjA3OTgxOTIzMn0.4FbEulTNGbAxFV0fp99TnHc3Yke4jYNgoMd3JNqpCv4"
 
 supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-# --- Configuración de la página (SIN theme="dark") ---
 st.set_page_config(
     page_title="🏆 CronoAndes — Resultados en Vivo",
     layout="wide",
     initial_sidebar_state="collapsed",
     page_icon="🏆"
-    # ⚠️ theme="dark" ya NO es válido en Streamlit >=1.35
 )
 
-# --- Estilos personalizados (fuerza fondo oscuro y texto blanco) ---
+# --- Estilos personalizados ---
 st.markdown("""
 <style>
-    /* Fondo oscuro en toda la app */
     .main, .stApp, [data-testid="stAppViewContainer"] {
         background-color: #0f172a !important;
         color: #f8fafc !important;
     }
 
-    /* Títulos siempre blancos */
     h1, h2, h3, h4, h5, h6,
     .stMarkdown h1, .stMarkdown h2, .stMarkdown h3,
     [data-testid="stHeadingWithActionElements"] h1,
@@ -38,12 +34,10 @@ st.markdown("""
         font-weight: bold !important;
     }
 
-    /* Fondo del header (barra superior) */
     [data-testid="stHeader"] {
         background-color: #0f172a !important;
     }
 
-    /* Estilos personalizados (sin cambios) */
     .evento-header {
         text-align: center;
         padding: 0.8rem;
@@ -55,6 +49,7 @@ st.markdown("""
         font-weight: bold;
         color: #ffffff !important;
     }
+
     .stExpander {
         background-color: #1e293b !important;
         border: 1px solid #334155 !important;
@@ -66,7 +61,27 @@ st.markdown("""
         font-weight: bold;
         font-size: 1.25rem;
     }
-    .col-carril, .col-posicion, .col-nombre, .col-club, .col-tiempo {
+
+    /* --- NUEVO: Estilo para la fila de encabezados de columna --- */
+    .header-row {
+        display: flex;
+        background-color: #1e293b;
+        padding: 10px 0;
+        font-weight: bold;
+        color: #cbd5e1;
+        border-bottom: 2px solid #334155;
+        margin-bottom: 12px;
+        border-radius: 6px;
+    }
+    .header-carril { width: 8%; text-align: center; }
+    .header-pos { width: 8%; text-align: center; }
+    .header-nombre { width: 28%; text-align: left; }
+    .header-club { width: 28%; text-align: left; }
+    .header-tiempo { width: 14%; text-align: right; }
+    .header-dif { width: 14%; text-align: right; }
+
+    /* --- Estilos para celdas de datos --- */
+    .col-carril, .col-posicion, .col-nombre, .col-club, .col-tiempo, .col-dif {
         padding: 8px 0;
         font-size: 1.05rem;
     }
@@ -92,7 +107,7 @@ st.markdown("""
         color: #94a3b8;
         text-align: left;
     }
-    .col-tiempo {
+    .col-tiempo, .col-dif {
         font-weight: bold;
         text-align: right;
         font-family: 'Courier New', monospace;
@@ -100,6 +115,7 @@ st.markdown("""
     .mejor-tiempo {
         color: #34d399 !important;
     }
+
     .stInfo, .stSuccess, .stWarning, .stError {
         background-color: #1e293b !important;
         color: #f8fafc !important;
@@ -116,7 +132,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- Función auxiliar: formatear tiempo ---
 def formatear_tiempo_segundos(segundos) -> str:
     if segundos is None or segundos <= 0:
         return "—"
@@ -130,20 +145,29 @@ def formatear_tiempo_segundos(segundos) -> str:
     except (ValueError, TypeError):
         return "—"
 
-# --- Título principal ---
+def formatear_diferencia(segundos) -> str:
+    """Formatea la diferencia al primer lugar (sin minutos, solo +segundos)"""
+    if segundos is None or segundos <= 0:
+        return "—"
+    try:
+        total = float(segundos)
+        if total == 0:
+            return "—"
+        return f"+{total:.2f}"
+    except (ValueError, TypeError):
+        return "—"
+
 st.title("🏆 CronoAndes — Resultados en Vivo")
 
-# --- Cargar y mostrar datos ---
 try:
-    # Paso 1: Obtener el event_code más reciente desde nadadores
+    # Obtener event_code más reciente
     nad_res = supabase.table("nadadores").select("event_code").order("id", desc=True).limit(1).execute()
     if not nad_res.data:
         st.error("❌ No hay eventos registrados aún.")
         st.stop()
-    
     event_code = nad_res.data[0]["event_code"]
 
-    # Paso 2: Buscar nombre del evento en eventos_meta
+    # Obtener nombre del evento
     nombre_evento = "Evento en vivo"
     meta_res = supabase.table("eventos_meta").select("nombre_evento").eq("event_code", event_code).limit(1).execute()
     if meta_res.data and meta_res.data[0].get("nombre_evento"):
@@ -151,7 +175,7 @@ try:
 
     st.markdown(f'<div class="evento-header">{nombre_evento}</div>', unsafe_allow_html=True)
 
-    # Paso 3: Cargar tiempos
+    # Cargar tiempos
     res = supabase.table("eventos_tiempo").select(
         "evento_completo, serie_numero, carril, nombre_completo, club, tiempo_neto"
     ).eq("event_code", event_code).execute()
@@ -169,10 +193,23 @@ try:
 
                 for serie_num in sorted(series.keys()):
                     st.markdown(f"**Serie {serie_num}**")
-                    tiempos = series[serie_num]
 
-                    # Filtrar y ordenar tiempos válidos
+                    # --- NUEVO: Fila de encabezados ---
+                    st.markdown("""
+                    <div class="header-row">
+                        <div class="header-carril">Carril</div>
+                        <div class="header-pos">Pos</div>
+                        <div class="header-nombre">Nombre</div>
+                        <div class="header-club">Club</div>
+                        <div class="header-tiempo">Tiempo</div>
+                        <div class="header-dif">Dif.</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    tiempos = series[serie_num]
                     validos = [t for t in tiempos if t.get("tiempo_neto", 0) > 0]
+
+                    mejor_tiempo_valor = None
                     if validos:
                         validos_sorted = sorted(validos, key=lambda x: x["tiempo_neto"])
                         mejor_tiempo_valor = validos_sorted[0]["tiempo_neto"]
@@ -181,7 +218,6 @@ try:
                             for i, t in enumerate(validos_sorted)
                         }
                     else:
-                        mejor_tiempo_valor = None
                         posicion_map = {}
 
                     # Mostrar en orden de carril
@@ -197,9 +233,11 @@ try:
                             posicion = posicion_map.get(key, "—")
                             tiempo_str = formatear_tiempo_segundos(tiempo_val)
                             es_mejor = (tiempo_val == mejor_tiempo_valor)
+                            dif_str = formatear_diferencia(tiempo_val - mejor_tiempo_valor) if mejor_tiempo_valor else "—"
                         else:
                             posicion = "—"
                             tiempo_str = "—"
+                            dif_str = "—"
                             es_mejor = False
 
                         clase_pos = ""
@@ -210,7 +248,7 @@ try:
                         elif posicion == 3:
                             clase_pos = "puesto-3"
 
-                        col1, col2, col3, col4, col5 = st.columns([1, 1, 3, 3, 2])
+                        col1, col2, col3, col4, col5, col6 = st.columns([0.8, 0.8, 2.8, 2.8, 1.4, 1.4])
                         with col1:
                             st.markdown(f'<div class="col-carril">C{carril}</div>', unsafe_allow_html=True)
                         with col2:
@@ -222,14 +260,16 @@ try:
                         with col5:
                             clase_tiempo = "mejor-tiempo" if es_mejor else ""
                             st.markdown(f'<div class="col-tiempo {clase_tiempo}">{tiempo_str}</div>', unsafe_allow_html=True)
+                        with col6:
+                            st.markdown(f'<div class="col-dif">{dif_str}</div>', unsafe_allow_html=True)
                         st.markdown('<div style="height: 10px;"></div>', unsafe_allow_html=True)
+
     else:
         st.info("⏳ Aún no hay tiempos en vivo. ¡Las carreras están por comenzar!")
 
 except Exception as e:
     st.error(f"❌ Error al cargar los datos: {e}")
 
-# --- Pie de página ---
 st.markdown('<div class="pie">sportandesperu@gmail.com • Actualización automática cada 5 segundos</div>', unsafe_allow_html=True)
 
 # --- Actualización automática ---
