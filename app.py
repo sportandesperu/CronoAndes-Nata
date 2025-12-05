@@ -8,16 +8,13 @@ SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 
 supabase = create_client(SUPABASE_URL.strip(), SUPABASE_ANON_KEY)
 
-# --- Estilo: fondo oscuro + títulos SIEMPRE BLANCOS + legibilidad garantizada ---
+# --- Estilo: fondo oscuro + títulos SIEMPRE BLANCOS ---
 st.markdown("""
 <style>
-    /* Fondo oscuro general */
     .main, .stApp {
         background-color: #0f172a !important;
         color: #f8fafc;
     }
-
-    /* ✅ Títulos SIEMPRE BLANCOS, incluso al hacer scroll */
     h1, h2, h3, h4, h5, h6,
     .stApp > header *,
     .stApp > header a,
@@ -28,13 +25,10 @@ st.markdown("""
         font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif !important;
         font-weight: bold;
     }
-
-    /* Header fijo con fondo oscuro al hacer scroll */
     .stApp > header {
         background-color: #0f172a !important;
         box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
-
     .evento-header {
         text-align: center;
         padding: 0.8rem;
@@ -46,7 +40,6 @@ st.markdown("""
         font-weight: bold;
         color: #ffffff !important;
     }
-
     .stExpander {
         background-color: #1e293b !important;
         border: 1px solid #334155 !important;
@@ -58,27 +51,23 @@ st.markdown("""
         font-weight: bold;
         font-size: 1.25rem;
     }
-
     .col-carril, .col-posicion, .col-nombre, .col-club, .col-tiempo {
         padding: 8px 0;
         font-size: 1.05rem;
     }
-
     .col-carril {
         font-weight: bold;
         color: #94a3b8;
         text-align: center;
     }
-
     .col-posicion {
         font-weight: bold;
         text-align: center;
         min-width: 50px;
     }
-    .col-posicion.puesto-1 { color: #fbbf24; } /* Oro */
-    .col-posicion.puesto-2 { color: #cbd5e1; } /* Plata */
-    .col-posicion.puesto-3 { color: #fda4af; } /* Bronce */
-
+    .col-posicion.puesto-1 { color: #fbbf24; }
+    .col-posicion.puesto-2 { color: #cbd5e1; }
+    .col-posicion.puesto-3 { color: #fda4af; }
     .col-nombre {
         font-weight: bold;
         color: #f8fafc;
@@ -94,15 +83,13 @@ st.markdown("""
         font-family: 'Courier New', monospace;
     }
     .mejor-tiempo {
-        color: #34d399 !important; /* Verde para mejor tiempo */
+        color: #34d399 !important;
     }
-
     .stInfo, .stSuccess, .stWarning, .stError {
         background-color: #1e293b !important;
         color: #f8fafc !important;
         border-left: 4px solid #38bdf8;
     }
-
     .pie {
         text-align: center;
         color: #94a3b8;
@@ -136,26 +123,23 @@ def formatear_tiempo_segundos(segundos) -> str:
         return "—"
 
 try:
-    # Obtener event_code y nombre_evento desde eventos_meta
-    event_code = None
-    nombre_evento = "Evento de Natación"
+    # Paso 1: Obtener el event_code más reciente desde nadadores (fuente confiable)
+    nad_res = supabase.table("nadadores").select("event_code").order("id", desc=True).limit(1).execute()
+    if not nad_res.data:
+        st.error("❌ No hay eventos registrados aún.")
+        st.stop()
+    
+    event_code = nad_res.data[0]["event_code"]
 
-    meta_res = supabase.table("eventos_meta").select("event_code, nombre_evento").order("fecha_creacion", desc=True).limit(1).execute()
-    if meta_res.data:
-        event_code = meta_res.data[0]["event_code"]
-        nombre_evento = meta_res.data[0].get("nombre_evento") or event_code
-    else:
-        nad_res = supabase.table("nadadores").select("event_code").order("event_code", desc=True).limit(1).execute()
-        if nad_res.data:
-            event_code = nad_res.data[0]["event_code"]
-            nombre_evento = event_code
-        else:
-            st.error("❌ No hay eventos registrados aún.")
-            st.stop()
+    # Paso 2: Buscar el nombre_evento en eventos_meta usando ese event_code
+    nombre_evento = "Evento en vivo"
+    meta_res = supabase.table("eventos_meta").select("nombre_evento").eq("event_code", event_code).limit(1).execute()
+    if meta_res.data and meta_res.data[0].get("nombre_evento"):
+        nombre_evento = meta_res.data[0]["nombre_evento"]
 
     st.markdown(f'<div class="evento-header">{nombre_evento}</div>', unsafe_allow_html=True)
 
-    # Cargar tiempos
+    # Paso 3: Cargar tiempos
     res = supabase.table("eventos_tiempo").select(
         "evento_completo, serie_numero, carril, nombre_completo, club, tiempo_neto"
     ).eq("event_code", event_code).execute()
@@ -175,12 +159,11 @@ try:
                     st.markdown(f"**Serie {serie_num}**")
                     tiempos = series[serie_num]
 
-                    # Filtrar y ordenar tiempos válidos para asignar posiciones
+                    # Filtrar y ordenar tiempos válidos
                     validos = [t for t in tiempos if t.get("tiempo_neto", 0) > 0]
                     if validos:
                         validos_sorted = sorted(validos, key=lambda x: x["tiempo_neto"])
                         mejor_tiempo_valor = validos_sorted[0]["tiempo_neto"]
-                        # Mapa: (nombre, club) → posición
                         posicion_map = {
                             (t["nombre_completo"], t["club"]): i + 1
                             for i, t in enumerate(validos_sorted)
@@ -189,7 +172,7 @@ try:
                         mejor_tiempo_valor = None
                         posicion_map = {}
 
-                    # Mostrar todos los nadadores en orden de carril
+                    # Mostrar en orden de carril
                     tiempos_ordenados_carril = sorted(tiempos, key=lambda x: x.get("carril", 999))
                     for t in tiempos_ordenados_carril:
                         carril = t["carril"]
@@ -198,7 +181,6 @@ try:
                         tiempo_val = t.get("tiempo_neto")
                         key = (nombre, club)
 
-                        # Determinar posición
                         if tiempo_val and tiempo_val > 0:
                             posicion = posicion_map.get(key, "—")
                             tiempo_str = formatear_tiempo_segundos(tiempo_val)
@@ -208,7 +190,6 @@ try:
                             tiempo_str = "—"
                             es_mejor = False
 
-                        # Estilos para posición (podio)
                         clase_pos = ""
                         if posicion == 1:
                             clase_pos = "puesto-1"
@@ -236,7 +217,7 @@ try:
 except Exception as e:
     st.error(f"❌ Error al cargar los datos: {e}")
 
-# --- Auto-refresh cada 6 segundos ---
+# Auto-refresh
 st.markdown(
     """
     <script>
