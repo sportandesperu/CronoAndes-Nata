@@ -221,7 +221,7 @@ except Exception as e:
 st.markdown(
     """
     <script>
-    setTimeout(() => window.location.reload(), 6000);
+    setTimeout(() => window.location.reload(), 2000);
     </script>
     """,
     unsafe_allow_html=True
