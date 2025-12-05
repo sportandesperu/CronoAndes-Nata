@@ -16,13 +16,6 @@ st.set_page_config(
     page_icon="🏆"
 )
 
-# --- Base64 del logo (montañas verdes/amarillas sobre fondo transparente) ---
-# ⚠️ Este es un placeholder. Reemplázalo con el base64 real de tu imagen si deseas usar la tuya.
-LOGO_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAEgAAAAQCAYAAAB7W95KAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAADWSURBVFhH7ZrLDoAgDESf//+PzCQpNlUWVtFkIaD3y3sKmS3b1mG6d0uqXQa2fK7j7a4b5z0KzQdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6QdGzG5j6u8z1v1g3dQ4g6Qd......"  # ⚠️ ¡ESTE ES UN PLACEHOLDER!
-
-# Si tienes tu propia imagen, reemplaza LOGO_BASE64 con el verdadero string base64.
-# Puedes generar uno aquí: https://base64.guru/converter/encode/image
-
 # --- Estilos profesionales ---
 st.markdown("""
 <style>
@@ -137,7 +130,6 @@ st.markdown("""
         border-left: 4px solid #10b981;
     }
 
-    /* --- Footer mejorado --- */
     .footer {
         display: flex;
         align-items: center;
@@ -233,21 +225,35 @@ try:
                     """, unsafe_allow_html=True)
 
                     tiempos = series[serie_num]
-                    validos = [t for t in tiempos if t.get("tiempo_neto", 0) > 0]
 
-                    mejor_tiempo_valor = None
-                    if validos:
-                        validos_sorted = sorted(validos, key=lambda x: x["tiempo_neto"])
-                        mejor_tiempo_valor = validos_sorted[0]["tiempo_neto"]
-                        posicion_map = {
-                            (t["nombre_completo"], t["club"]): i + 1
-                            for i, t in enumerate(validos_sorted)
-                        }
-                    else:
-                        posicion_map = {}
+                    # --- 🔥 NUEVA LÓGICA DE ORDEN ---
+                    con_tiempo = []
+                    sin_tiempo = []
 
-                    tiempos_ordenados_carril = sorted(tiempos, key=lambda x: x.get("carril", 999))
-                    for t in tiempos_ordenados_carril:
+                    for t in tiempos:
+                        tiempo_val = t.get("tiempo_neto")
+                        if tiempo_val and tiempo_val > 0:
+                            con_tiempo.append(t)
+                        else:
+                            sin_tiempo.append(t)
+
+                    # Ordenar los que tienen tiempo: más rápido primero
+                    con_tiempo_ordenados = sorted(con_tiempo, key=lambda x: x["tiempo_neto"])
+                    # Ordenar los que NO tienen tiempo: por carril
+                    sin_tiempo_ordenados = sorted(sin_tiempo, key=lambda x: x.get("carril", 999))
+
+                    # Combinar: primero los con tiempo, luego los sin tiempo
+                    nadadores_ordenados = con_tiempo_ordenados + sin_tiempo_ordenados
+
+                    # Calcular posiciones y mejor tiempo SOLO entre quienes tienen tiempo
+                    mejor_tiempo_valor = con_tiempo_ordenados[0]["tiempo_neto"] if con_tiempo_ordenados else None
+                    posicion_map = {}
+                    for i, t in enumerate(con_tiempo_ordenados):
+                        key = (t["nombre_completo"], t["club"])
+                        posicion_map[key] = i + 1
+
+                    # --- Mostrar los nadadores en el orden definido ---
+                    for t in nadadores_ordenados:
                         carril = t["carril"]
                         nombre = t.get("nombre_completo", "—")
                         club = t.get("club", "—")
@@ -294,14 +300,8 @@ try:
 except Exception as e:
     st.error(f"❌ Error al cargar los datos: {e}")
 
-# --- Footer con logo y correo ---
-st.markdown(f"""
-<div class="footer">
-    <img src="data:image/png;base64,{LOGO_BASE64}" alt="CronoAndes Logo">
-    <a href="mailto:sportandesperu@gmail.com">sportandesperu@gmail.com</a>
-    • Actualización automática cada 5 segundos
-</div>
-""", unsafe_allow_html=True)
+# --- Footer ---
+st.markdown('<div class="footer"><a href="mailto:sportandesperu@gmail.com">sportandesperu@gmail.com</a> • Actualización automática cada 5 segundos</div>', unsafe_allow_html=True)
 
 # --- Actualización automática ---
 time.sleep(5)
