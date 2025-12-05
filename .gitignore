@@ -1,19 +1,1 @@
-# Python
-__pycache__/
-*.pyc
 
-# Env
-.env
-*.env
-
-# Virtual environments
-venv/
-.env/
-.venv/
-
-# OS crap
-.DS_Store
-
-# IDE
-.vscode/
-.idea/
