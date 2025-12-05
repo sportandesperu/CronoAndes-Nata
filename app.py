@@ -50,6 +50,7 @@ st.markdown("""
         color: #ffffff !important;
     }
 
+    /* --- Expander: texto SIEMPRE blanco --- */
     .stExpander {
         background-color: #1e293b !important;
         border: 1px solid #334155 !important;
@@ -61,8 +62,20 @@ st.markdown("""
         font-weight: bold;
         font-size: 1.25rem;
     }
+    .stExpander > div[role="button"] > div,
+    .stExpander > div[role="button"] > div > div,
+    .stExpander > div[role="button"] h3,
+    .stExpander > div[role="button"] span {
+        color: #ffffff !important;
+        font-weight: bold !important;
+    }
+    .stExpander[open] > div[role="button"],
+    .stExpander[open] > div[role="button"] > div,
+    .stExpander[open] > div[role="button"] > div > div {
+        color: #ffffff !important;
+    }
 
-    /* --- NUEVO: Estilo para la fila de encabezados de columna --- */
+    /* --- Encabezados de columna --- */
     .header-row {
         display: flex;
         background-color: #1e293b;
@@ -80,7 +93,6 @@ st.markdown("""
     .header-tiempo { width: 14%; text-align: right; }
     .header-dif { width: 14%; text-align: right; }
 
-    /* --- Estilos para celdas de datos --- */
     .col-carril, .col-posicion, .col-nombre, .col-club, .col-tiempo, .col-dif {
         padding: 8px 0;
         font-size: 1.05rem;
