@@ -2,6 +2,7 @@ import streamlit as st
 from supabase import create_client
 from collections import defaultdict
 import time
+import json
 
 # --- Configuración de Supabase ---
 SUPABASE_URL = "https://tvbmajrcylbzgalxivoy.supabase.co"
@@ -16,35 +17,35 @@ st.set_page_config(
     page_icon="🏆"
 )
 
-# --- ORDEN PERSONALIZADO DE PRUEBAS ---
+# --- ORDEN CORRECTO SEGÚN TU PDF ---
 ORDEN_CATEGORIAS = [
     "Exhibición",
-    "Pre-Mínima Femenino",
-    "Pre-Mínima Masculino",
-    "Mínima Femenino",
-    "Mínima Masculino",
-    "Infantil Femenino",
-    "Infantil Masculino",
-    "Juvenil Femenino",
-    "Juvenil Masculino",
-    "Mayores Femenino",
-    "Mayores Masculino",
+    "Pre-minima",
+    "Minima",
+    "Infantil A",
+    "Infantil B",
+    "Juvenil A",
+    "Juvenil B",
+    "Mayores"
 ]
 
-def extraer_categoria_base(nombre_prueba: str) -> str:
-    """Extrae la categoría del inicio del nombre de la prueba."""
+def extraer_categoria_y_genero(evento: str) -> tuple[str, str]:
+    """Extrae categoría y género del evento_completo como en el PDF."""
+    categoria = "ZZZ"
     for cat in ORDEN_CATEGORIAS:
-        if nombre_prueba.startswith(cat):
-            return cat
-    return "ZZZ Otros"  # Irá al final
+        if cat in evento:
+            categoria = cat
+            break
+    genero = "Femenino" if ("Niñas" in evento or "Mujeres" in evento) else "Masculino"
+    return categoria, genero
 
-def clave_orden_prueba(nombre_prueba: str) -> int:
-    cat = extraer_categoria_base(nombre_prueba)
-    if cat in ORDEN_CATEGORIAS:
-        return ORDEN_CATEGORIAS.index(cat)
-    return 999
+def clave_orden_prueba(evento: str) -> tuple[int, int, str]:
+    cat, gen = extraer_categoria_y_genero(evento)
+    idx_cat = ORDEN_CATEGORIAS.index(cat) if cat in ORDEN_CATEGORIAS else 999
+    idx_gen = 0 if gen == "Femenino" else 1
+    return (idx_cat, idx_gen, evento)
 
-# --- Estilos profesionales ---
+# --- Estilos profesionales (sin cambios) ---
 st.markdown("""
 <style>
     .main, .stApp, [data-testid="stAppViewContainer"] {
@@ -181,7 +182,7 @@ st.markdown("""
 
 def formatear_tiempo_segundos(segundos) -> str:
     if segundos is None or segundos <= 0:
-        return "—"
+        return "NT"
     try:
         total = float(segundos)
         mins = int(total // 60)
@@ -190,7 +191,7 @@ def formatear_tiempo_segundos(segundos) -> str:
             return f"{mins}:{secs:05.2f}"
         return f"{secs:.2f}"
     except (ValueError, TypeError):
-        return "—"
+        return "NT"
 
 def formatear_diferencia(segundos) -> str:
     if segundos is None or segundos <= 0:
@@ -206,12 +207,14 @@ def formatear_diferencia(segundos) -> str:
 st.title("🏆 CronoAndes — Resultados en Vivo")
 
 try:
+    # Obtener event_code
     nad_res = supabase.table("nadadores").select("event_code").order("id", desc=True).limit(1).execute()
     if not nad_res.data:
         st.error("❌ No hay eventos registrados aún.")
         st.stop()
     event_code = nad_res.data[0]["event_code"]
 
+    # Nombre del evento
     nombre_evento = "Evento en vivo"
     meta_res = supabase.table("eventos_meta").select("nombre_evento").eq("event_code", event_code).limit(1).execute()
     if meta_res.data and meta_res.data[0].get("nombre_evento"):
@@ -219,26 +222,134 @@ try:
 
     st.markdown(f'<div class="evento-header">{nombre_evento}</div>', unsafe_allow_html=True)
 
+    # Cargar tiempos y cronograma
     res = supabase.table("eventos_tiempo").select(
         "evento_completo, serie_numero, carril, nombre_completo, club, tiempo_neto"
     ).eq("event_code", event_code).execute()
+
+    cromo_res = supabase.table("cronograma").select("evento_completo, tipo").eq("event_code", event_code).eq("tipo", "final").execute()
+    pruebas_finales_set = {b["evento_completo"] for b in cromo_res.data} if cromo_res.data else set()
 
     if res.data:
         pruebas = defaultdict(list)
         for r in res.data:
             pruebas[r["evento_completo"]].append(r)
 
-        # --- 🔥 ORDENAR LAS PRUEBAS SEGÚN EL ORDEN PERSONALIZADO ---
+        # Ordenar y separar
         pruebas_ordenadas = sorted(pruebas.keys(), key=clave_orden_prueba)
+        preliminares = [p for p in pruebas_ordenadas if p not in pruebas_finales_set]
+        finales = [p for p in pruebas_ordenadas if p in pruebas_finales_set]
 
-        for prueba in pruebas_ordenadas:
-            with st.expander(f"▶️ {prueba}", expanded=True):
-                series = defaultdict(list)
-                for t in pruebas[prueba]:
-                    series[t["serie_numero"]].append(t)
+        # Preliminares
+        if preliminares:
+            st.markdown("### 🏊 Preliminares")
+            for prueba in preliminares:
+                with st.expander(f"▶️ {prueba}", expanded=False):
+                    series = defaultdict(list)
+                    for t in pruebas[prueba]:
+                        series[t["serie_numero"]].append(t)
 
-                for serie_num in sorted(series.keys()):
-                    st.markdown(f"**Serie {serie_num}**")
+                    for serie_num in sorted(series.keys()):
+                        if len(series) > 1:
+                            st.markdown(f"**Serie {serie_num}**")
+
+                        st.markdown("""
+                        <div class="header-row">
+                            <div class="header-carril">Carril</div>
+                            <div class="header-pos">Pos</div>
+                            <div class="header-nombre">Nombre</div>
+                            <div class="header-club">Club</div>
+                            <div class="header-tiempo">Tiempo</div>
+                            <div class="header-dif">Dif.</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        tiempos = series[serie_num]
+                        con_tiempo = []
+                        sin_tiempo = []
+                        for t in tiempos:
+                            tiempo_val = t.get("tiempo_neto")
+                            if tiempo_val is not None and isinstance(tiempo_val, (int, float)) and tiempo_val > 0:
+                                con_tiempo.append(t)
+                            else:
+                                sin_tiempo.append(t)
+
+                        con_tiempo_ordenados = sorted(con_tiempo, key=lambda x: x["tiempo_neto"])
+                        sin_tiempo_ordenados = sorted(sin_tiempo, key=lambda x: x.get("carril", 999))
+                        nadadores_ordenados = con_tiempo_ordenados + sin_tiempo_ordenados
+
+                        mejor_tiempo_valor = con_tiempo_ordenados[0]["tiempo_neto"] if con_tiempo_ordenados else None
+                        posicion_map = {
+                            (t["nombre_completo"], t["club"]): i + 1
+                            for i, t in enumerate(con_tiempo_ordenados)
+                        }
+
+                        for t in nadadores_ordenados:
+                            carril = t["carril"]
+                            nombre = t.get("nombre_completo", "—")
+                            club = t.get("club", "—")
+                            tiempo_val = t.get("tiempo_neto")
+                            key = (nombre, club)
+
+                            if tiempo_val is not None and isinstance(tiempo_val, (int, float)) and tiempo_val > 0:
+                                posicion = posicion_map.get(key, "—")
+                                tiempo_str = formatear_tiempo_segundos(tiempo_val)
+                                es_mejor = (tiempo_val == mejor_tiempo_valor)
+                                dif_str = formatear_diferencia(tiempo_val - mejor_tiempo_valor) if mejor_tiempo_valor else "—"
+                            else:
+                                posicion = "—"
+                                tiempo_str = "NT"
+                                dif_str = "—"
+                                es_mejor = False
+
+                            clase_pos = ""
+                            if posicion == 1:
+                                clase_pos = "puesto-1"
+                            elif posicion == 2:
+                                clase_pos = "puesto-2"
+                            elif posicion == 3:
+                                clase_pos = "puesto-3"
+
+                            col1, col2, col3, col4, col5, col6 = st.columns([0.8, 0.8, 2.8, 2.8, 1.4, 1.4])
+                            with col1:
+                                st.markdown(f'<div class="col-carril">C{carril}</div>', unsafe_allow_html=True)
+                            with col2:
+                                st.markdown(f'<div class="col-posicion {clase_pos}">{posicion}</div>', unsafe_allow_html=True)
+                            with col3:
+                                st.markdown(f'<div class="col-nombre">{nombre}</div>', unsafe_allow_html=True)
+                            with col4:
+                                st.markdown(f'<div class="col-club">{club}</div>', unsafe_allow_html=True)
+                            with col5:
+                                clase_tiempo = "mejor-tiempo" if es_mejor else ""
+                                st.markdown(f'<div class="col-tiempo {clase_tiempo}">{tiempo_str}</div>', unsafe_allow_html=True)
+                            with col6:
+                                st.markdown(f'<div class="col-dif">{dif_str}</div>', unsafe_allow_html=True)
+                            st.markdown('<div style="height: 10px;"></div>', unsafe_allow_html=True)
+
+        # Finales
+        if finales:
+            st.markdown("### 🏁 Finales")
+            for prueba in finales:
+                with st.expander(f"▶️ {prueba}", expanded=True):
+                    tiempos = pruebas[prueba]
+                    con_tiempo = []
+                    sin_tiempo = []
+                    for t in tiempos:
+                        tiempo_val = t.get("tiempo_neto")
+                        if tiempo_val is not None and isinstance(tiempo_val, (int, float)) and tiempo_val > 0:
+                            con_tiempo.append(t)
+                        else:
+                            sin_tiempo.append(t)
+
+                    con_tiempo_ordenados = sorted(con_tiempo, key=lambda x: x["tiempo_neto"])
+                    sin_tiempo_ordenados = sorted(sin_tiempo, key=lambda x: x.get("carril", 999))
+                    nadadores_ordenados = con_tiempo_ordenados + sin_tiempo_ordenados
+
+                    mejor_tiempo_valor = con_tiempo_ordenados[0]["tiempo_neto"] if con_tiempo_ordenados else None
+                    posicion_map = {
+                        (t["nombre_completo"], t["club"]): i + 1
+                        for i, t in enumerate(con_tiempo_ordenados)
+                    }
 
                     st.markdown("""
                     <div class="header-row">
@@ -251,31 +362,6 @@ try:
                     </div>
                     """, unsafe_allow_html=True)
 
-                    tiempos = series[serie_num]
-
-                    # Separar con y sin tiempo
-                    con_tiempo = []
-                    sin_tiempo = []
-                    for t in tiempos:
-                        tiempo_val = t.get("tiempo_neto")
-                        if tiempo_val and tiempo_val > 0:
-                            con_tiempo.append(t)
-                        else:
-                            sin_tiempo.append(t)
-
-                    # Ordenar
-                    con_tiempo_ordenados = sorted(con_tiempo, key=lambda x: x["tiempo_neto"])
-                    sin_tiempo_ordenados = sorted(sin_tiempo, key=lambda x: x.get("carril", 999))
-                    nadadores_ordenados = con_tiempo_ordenados + sin_tiempo_ordenados
-
-                    # Posiciones solo para quienes tienen tiempo
-                    mejor_tiempo_valor = con_tiempo_ordenados[0]["tiempo_neto"] if con_tiempo_ordenados else None
-                    posicion_map = {
-                        (t["nombre_completo"], t["club"]): i + 1
-                        for i, t in enumerate(con_tiempo_ordenados)
-                    }
-
-                    # Mostrar
                     for t in nadadores_ordenados:
                         carril = t["carril"]
                         nombre = t.get("nombre_completo", "—")
@@ -283,14 +369,14 @@ try:
                         tiempo_val = t.get("tiempo_neto")
                         key = (nombre, club)
 
-                        if tiempo_val and tiempo_val > 0:
+                        if tiempo_val is not None and isinstance(tiempo_val, (int, float)) and tiempo_val > 0:
                             posicion = posicion_map.get(key, "—")
                             tiempo_str = formatear_tiempo_segundos(tiempo_val)
                             es_mejor = (tiempo_val == mejor_tiempo_valor)
                             dif_str = formatear_diferencia(tiempo_val - mejor_tiempo_valor) if mejor_tiempo_valor else "—"
                         else:
                             posicion = "—"
-                            tiempo_str = "—"
+                            tiempo_str = "NT"
                             dif_str = "—"
                             es_mejor = False
 
