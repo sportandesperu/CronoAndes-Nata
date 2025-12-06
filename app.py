@@ -16,6 +16,34 @@ st.set_page_config(
     page_icon="🏆"
 )
 
+# --- ORDEN PERSONALIZADO DE PRUEBAS ---
+ORDEN_CATEGORIAS = [
+    "Exhibición",
+    "Pre-Mínima Femenino",
+    "Pre-Mínima Masculino",
+    "Mínima Femenino",
+    "Mínima Masculino",
+    "Infantil Femenino",
+    "Infantil Masculino",
+    "Juvenil Femenino",
+    "Juvenil Masculino",
+    "Mayores Femenino",
+    "Mayores Masculino",
+]
+
+def extraer_categoria_base(nombre_prueba: str) -> str:
+    """Extrae la categoría del inicio del nombre de la prueba."""
+    for cat in ORDEN_CATEGORIAS:
+        if nombre_prueba.startswith(cat):
+            return cat
+    return "ZZZ Otros"  # Irá al final
+
+def clave_orden_prueba(nombre_prueba: str) -> int:
+    cat = extraer_categoria_base(nombre_prueba)
+    if cat in ORDEN_CATEGORIAS:
+        return ORDEN_CATEGORIAS.index(cat)
+    return 999
+
 # --- Estilos profesionales ---
 st.markdown("""
 <style>
@@ -141,10 +169,6 @@ st.markdown("""
         color: #6b7280;
         font-size: 0.95rem;
     }
-    .footer img {
-        height: 36px;
-        opacity: 0.9;
-    }
     .footer a {
         color: #3b82f6;
         text-decoration: none;
@@ -204,7 +228,10 @@ try:
         for r in res.data:
             pruebas[r["evento_completo"]].append(r)
 
-        for prueba in sorted(pruebas.keys()):
+        # --- 🔥 ORDENAR LAS PRUEBAS SEGÚN EL ORDEN PERSONALIZADO ---
+        pruebas_ordenadas = sorted(pruebas.keys(), key=clave_orden_prueba)
+
+        for prueba in pruebas_ordenadas:
             with st.expander(f"▶️ {prueba}", expanded=True):
                 series = defaultdict(list)
                 for t in pruebas[prueba]:
@@ -226,10 +253,9 @@ try:
 
                     tiempos = series[serie_num]
 
-                    # --- 🔥 NUEVA LÓGICA DE ORDEN ---
+                    # Separar con y sin tiempo
                     con_tiempo = []
                     sin_tiempo = []
-
                     for t in tiempos:
                         tiempo_val = t.get("tiempo_neto")
                         if tiempo_val and tiempo_val > 0:
@@ -237,22 +263,19 @@ try:
                         else:
                             sin_tiempo.append(t)
 
-                    # Ordenar los que tienen tiempo: más rápido primero
+                    # Ordenar
                     con_tiempo_ordenados = sorted(con_tiempo, key=lambda x: x["tiempo_neto"])
-                    # Ordenar los que NO tienen tiempo: por carril
                     sin_tiempo_ordenados = sorted(sin_tiempo, key=lambda x: x.get("carril", 999))
-
-                    # Combinar: primero los con tiempo, luego los sin tiempo
                     nadadores_ordenados = con_tiempo_ordenados + sin_tiempo_ordenados
 
-                    # Calcular posiciones y mejor tiempo SOLO entre quienes tienen tiempo
+                    # Posiciones solo para quienes tienen tiempo
                     mejor_tiempo_valor = con_tiempo_ordenados[0]["tiempo_neto"] if con_tiempo_ordenados else None
-                    posicion_map = {}
-                    for i, t in enumerate(con_tiempo_ordenados):
-                        key = (t["nombre_completo"], t["club"])
-                        posicion_map[key] = i + 1
+                    posicion_map = {
+                        (t["nombre_completo"], t["club"]): i + 1
+                        for i, t in enumerate(con_tiempo_ordenados)
+                    }
 
-                    # --- Mostrar los nadadores en el orden definido ---
+                    # Mostrar
                     for t in nadadores_ordenados:
                         carril = t["carril"]
                         nombre = t.get("nombre_completo", "—")
