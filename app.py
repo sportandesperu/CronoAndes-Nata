@@ -4,7 +4,7 @@ from collections import defaultdict
 import time
 
 # --- Configuración de Supabase ---
-SUPABASE_URL = "https://tvbmajrcylbzgalxivoy.supabase.co  "
+SUPABASE_URL = "https://tvbmajrcylbzgalxivoy.supabase.co"
 SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2Ym1hanJjeWxiemdhbHhpdm95Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQyNDMyMzIsImV4cCI6MjA3OTgxOTIzMn0.4FbEulTNGbAxFV0fp99TnHc3Yke4jYNgoMd3JNqpCv4"
 
 supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
