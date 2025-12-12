@@ -3,12 +3,13 @@ from supabase import create_client
 from collections import defaultdict
 import time
 import json
+import re
 
 # --- Configuración de Supabase ---
 SUPABASE_URL = "https://tvbmajrcylbzgalxivoy.supabase.co"
 SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2Ym1hanJjeWxiemdhbHhpdm95Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQyNDMyMzIsImV4cCI6MjA3OTgxOTIzMn0.4FbEulTNGbAxFV0fp99TnHc3Yke4jYNgoMd3JNqpCv4"
 
-supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+supabase = create_client(SUPABASE_URL.strip(), SUPABASE_ANON_KEY.strip())
 
 st.set_page_config(
     page_title="🏆 CronoAndes — Resultados en Vivo",
@@ -29,14 +30,25 @@ ORDEN_CATEGORIAS = [
     "Mayores"
 ]
 
+def normalizar_evento(evento: str) -> str:
+    """Normaliza el evento para comparaciones robustas."""
+    if not evento:
+        return ""
+    s = str(evento).strip().lower()
+    # Unificar guiones y espacios
+    s = re.sub(r'\s*[–\-—]\s*', ' - ', s)
+    s = re.sub(r'\s+', ' ', s)
+    return s
+
 def extraer_categoria_y_genero(evento: str) -> tuple[str, str]:
     """Extrae categoría y género del evento_completo como en el PDF."""
+    evento_orig = evento
     categoria = "ZZZ"
     for cat in ORDEN_CATEGORIAS:
-        if cat in evento:
+        if cat.lower() in evento.lower():
             categoria = cat
             break
-    genero = "Femenino" if ("Niñas" in evento or "Mujeres" in evento) else "Masculino"
+    genero = "Femenino" if ("niñas" in evento.lower() or "mujeres" in evento.lower()) else "Masculino"
     return categoria, genero
 
 def clave_orden_prueba(evento: str) -> tuple[int, int, str]:
@@ -45,28 +57,18 @@ def clave_orden_prueba(evento: str) -> tuple[int, int, str]:
     idx_gen = 0 if gen == "Femenino" else 1
     return (idx_cat, idx_gen, evento)
 
-# --- Estilos profesionales (sin cambios) ---
+# --- Estilos profesionales ---
 st.markdown("""
 <style>
     .main, .stApp, [data-testid="stAppViewContainer"] {
         background-color: #f8f9fa !important;
         color: #1a1a1a !important;
     }
-
-    h1, h2, h3, h4, h5, h6,
-    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3,
-    [data-testid="stHeadingWithActionElements"] h1,
-    [data-testid="stHeadingWithActionElements"] div,
-    .stTitle, .stHeader, .stSubheader {
+    h1, h2, h3, h4, h5, h6 {
         color: #111827 !important;
         font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif !important;
         font-weight: bold !important;
     }
-
-    [data-testid="stHeader"] {
-        background-color: #ffffff !important;
-    }
-
     .evento-header {
         text-align: center;
         padding: 0.8rem;
@@ -79,7 +81,6 @@ st.markdown("""
         color: #0c4a6e !important;
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
-
     .stExpander {
         background-color: #ffffff !important;
         border: 1px solid #d1d5db !important;
@@ -94,11 +95,6 @@ st.markdown("""
         font-size: 1.25rem;
         padding: 0.8rem 1rem;
     }
-    .stExpander > div[role="button"] *,
-    .stExpander[open] > div[role="button"] * {
-        color: #111827 !important;
-    }
-
     .header-row {
         display: flex;
         background-color: #f3f4f6;
@@ -116,7 +112,6 @@ st.markdown("""
     .header-club { width: 28%; text-align: left; }
     .header-tiempo { width: 14%; text-align: right; }
     .header-dif { width: 14%; text-align: right; }
-
     .col-carril, .col-posicion, .col-nombre, .col-club, .col-tiempo, .col-dif {
         padding: 8px 0;
         font-size: 1.05rem;
@@ -152,13 +147,6 @@ st.markdown("""
     .mejor-tiempo {
         color: #059669 !important;
     }
-
-    .stInfo, .stSuccess, .stWarning, .stError {
-        background-color: #f0fdf4 !important;
-        color: #065f46 !important;
-        border-left: 4px solid #10b981;
-    }
-
     .footer {
         display: flex;
         align-items: center;
@@ -169,13 +157,6 @@ st.markdown("""
         border-top: 1px solid #e5e7eb;
         color: #6b7280;
         font-size: 0.95rem;
-    }
-    .footer a {
-        color: #3b82f6;
-        text-decoration: none;
-    }
-    .footer a:hover {
-        text-decoration: underline;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -222,20 +203,23 @@ try:
 
     st.markdown(f'<div class="evento-header">{nombre_evento}</div>', unsafe_allow_html=True)
 
-    # Cargar tiempos y cronograma
+    # Cargar tiempos
     res = supabase.table("eventos_tiempo").select(
         "evento_completo, serie_numero, carril, nombre_completo, club, tiempo_neto"
     ).eq("event_code", event_code).execute()
 
+    # Cargar eventos que son finales
     cromo_res = supabase.table("cronograma").select("evento_completo, tipo").eq("event_code", event_code).eq("tipo", "final").execute()
-    pruebas_finales_set = {b["evento_completo"] for b in cromo_res.data} if cromo_res.data else set()
+    pruebas_finales_set = {normalizar_evento(b["evento_completo"]) for b in cromo_res.data} if cromo_res.data else set()
 
     if res.data:
         pruebas = defaultdict(list)
-        for r in res.data:
-            pruebas[r["evento_completo"]].append(r)
+        # Agrupar tiempos usando clave normalizada
+        for r in res.
+            clave_norm = normalizar_evento(r["evento_completo"])
+            pruebas[clave_norm].append(r)
 
-        # Ordenar y separar
+        # Obtener lista de eventos únicos (normalizados)
         pruebas_ordenadas = sorted(pruebas.keys(), key=clave_orden_prueba)
         preliminares = [p for p in pruebas_ordenadas if p not in pruebas_finales_set]
         finales = [p for p in pruebas_ordenadas if p in pruebas_finales_set]
@@ -243,10 +227,16 @@ try:
         # Preliminares
         if preliminares:
             st.markdown("### 🏊 Preliminares")
-            for prueba in preliminares:
-                with st.expander(f"▶️ {prueba}", expanded=False):
+            for prueba_norm in preliminares:
+                # Usar el primer evento original para mostrar (más legible)
+                evento_original = res.data[0]["evento_completo"]
+                for r in res.
+                    if normalizar_evento(r["evento_completo"]) == prueba_norm:
+                        evento_original = r["evento_completo"]
+                        break
+                with st.expander(f"▶️ {evento_original}", expanded=False):
                     series = defaultdict(list)
-                    for t in pruebas[prueba]:
+                    for t in pruebas[prueba_norm]:
                         series[t["serie_numero"]].append(t)
 
                     for serie_num in sorted(series.keys()):
@@ -329,9 +319,15 @@ try:
         # Finales
         if finales:
             st.markdown("### 🏁 Finales")
-            for prueba in finales:
-                with st.expander(f"▶️ {prueba}", expanded=True):
-                    tiempos = pruebas[prueba]
+            for prueba_norm in finales:
+                # Recuperar el nombre original para mostrar
+                evento_original = res.data[0]["evento_completo"]
+                for r in res.
+                    if normalizar_evento(r["evento_completo"]) == prueba_norm:
+                        evento_original = r["evento_completo"]
+                        break
+                with st.expander(f"▶️ {evento_original}", expanded=True):
+                    tiempos = pruebas[prueba_norm]
                     con_tiempo = []
                     sin_tiempo = []
                     for t in tiempos:
