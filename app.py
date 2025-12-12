@@ -35,14 +35,12 @@ def normalizar_evento(evento: str) -> str:
     if not evento:
         return ""
     s = str(evento).strip().lower()
-    # Unificar guiones y espacios
     s = re.sub(r'\s*[–\-—]\s*', ' - ', s)
     s = re.sub(r'\s+', ' ', s)
     return s
 
 def extraer_categoria_y_genero(evento: str) -> tuple[str, str]:
     """Extrae categoría y género del evento_completo como en el PDF."""
-    evento_orig = evento
     categoria = "ZZZ"
     for cat in ORDEN_CATEGORIAS:
         if cat.lower() in evento.lower():
@@ -57,7 +55,7 @@ def clave_orden_prueba(evento: str) -> tuple[int, int, str]:
     idx_gen = 0 if gen == "Femenino" else 1
     return (idx_cat, idx_gen, evento)
 
-# --- Estilos profesionales ---
+# --- Estilos ---
 st.markdown("""
 <style>
     .main, .stApp, [data-testid="stAppViewContainer"] {
@@ -208,18 +206,16 @@ try:
         "evento_completo, serie_numero, carril, nombre_completo, club, tiempo_neto"
     ).eq("event_code", event_code).execute()
 
-    # Cargar eventos que son finales
+    # Cargar finales
     cromo_res = supabase.table("cronograma").select("evento_completo, tipo").eq("event_code", event_code).eq("tipo", "final").execute()
     pruebas_finales_set = {normalizar_evento(b["evento_completo"]) for b in cromo_res.data} if cromo_res.data else set()
 
     if res.data:
         pruebas = defaultdict(list)
-        # Agrupar tiempos usando clave normalizada
-        for r in res.
+        for r in res.data:  # ✅ CORREGIDO: .data
             clave_norm = normalizar_evento(r["evento_completo"])
             pruebas[clave_norm].append(r)
 
-        # Obtener lista de eventos únicos (normalizados)
         pruebas_ordenadas = sorted(pruebas.keys(), key=clave_orden_prueba)
         preliminares = [p for p in pruebas_ordenadas if p not in pruebas_finales_set]
         finales = [p for p in pruebas_ordenadas if p in pruebas_finales_set]
@@ -228,12 +224,7 @@ try:
         if preliminares:
             st.markdown("### 🏊 Preliminares")
             for prueba_norm in preliminares:
-                # Usar el primer evento original para mostrar (más legible)
-                evento_original = res.data[0]["evento_completo"]
-                for r in res.
-                    if normalizar_evento(r["evento_completo"]) == prueba_norm:
-                        evento_original = r["evento_completo"]
-                        break
+                evento_original = next((r["evento_completo"] for r in res.data if normalizar_evento(r["evento_completo"]) == prueba_norm), prueba_norm)
                 with st.expander(f"▶️ {evento_original}", expanded=False):
                     series = defaultdict(list)
                     for t in pruebas[prueba_norm]:
@@ -254,10 +245,10 @@ try:
                         </div>
                         """, unsafe_allow_html=True)
 
-                        tiempos = series[serie_num]
+                        tiempos_lista = series[serie_num]
                         con_tiempo = []
                         sin_tiempo = []
-                        for t in tiempos:
+                        for t in tiempos_lista:
                             tiempo_val = t.get("tiempo_neto")
                             if tiempo_val is not None and isinstance(tiempo_val, (int, float)) and tiempo_val > 0:
                                 con_tiempo.append(t)
@@ -320,17 +311,12 @@ try:
         if finales:
             st.markdown("### 🏁 Finales")
             for prueba_norm in finales:
-                # Recuperar el nombre original para mostrar
-                evento_original = res.data[0]["evento_completo"]
-                for r in res.
-                    if normalizar_evento(r["evento_completo"]) == prueba_norm:
-                        evento_original = r["evento_completo"]
-                        break
+                evento_original = next((r["evento_completo"] for r in res.data if normalizar_evento(r["evento_completo"]) == prueba_norm), prueba_norm)
                 with st.expander(f"▶️ {evento_original}", expanded=True):
-                    tiempos = pruebas[prueba_norm]
+                    tiempos_lista = pruebas[prueba_norm]
                     con_tiempo = []
                     sin_tiempo = []
-                    for t in tiempos:
+                    for t in tiempos_lista:
                         tiempo_val = t.get("tiempo_neto")
                         if tiempo_val is not None and isinstance(tiempo_val, (int, float)) and tiempo_val > 0:
                             con_tiempo.append(t)
